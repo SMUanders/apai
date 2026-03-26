@@ -15,18 +15,57 @@ export async function GET() {
   return NextResponse.json(data)
 }
 
+function similarity(a: string, b: string): number {
+  const an = a.toLowerCase().trim()
+  const bn = b.toLowerCase().trim()
+  if (an === bn) return 1
+  const wordsA = new Set(an.split(/\s+/))
+  const wordsB = bn.split(/\s+/)
+  const overlap = wordsB.filter((w) => wordsA.has(w)).length
+  return overlap / Math.max(wordsA.size, wordsB.length)
+}
+
 // POST /api/items — modtag rå input, klassificér og gem
 export async function POST(req: NextRequest) {
-  const { raw_input } = await req.json()
+  const body = await req.json()
+  const { raw_input, force } = body as { raw_input: string; force?: boolean }
 
   if (!raw_input?.trim()) {
     return NextResponse.json({ error: 'Mangler input' }, { status: 400 })
   }
 
-  // Klassificér med AI
-  const classification = await classifyInput(raw_input)
+  // Duplikat-tjek (medmindre brugeren har force-accept)
+  if (!force) {
+    const { data: recent } = await supabase
+      .from('items')
+      .select('*')
+      .eq('status', 'inbox')
+      .order('created_at', { ascending: false })
+      .limit(50)
 
-  // Gem i Supabase
+    if (recent) {
+      const dup = recent.find((item) => similarity(raw_input, item.raw_input) > 0.8)
+      if (dup) {
+        return NextResponse.json({ duplicate: true, existing_item: dup }, { status: 200 })
+      }
+    }
+  }
+
+  // Klassificér med AI
+  let classification
+  try {
+    classification = await classifyInput(raw_input)
+  } catch {
+    // Fallback hvis Claude fejler
+    classification = {
+      type: 'note' as const,
+      summary: raw_input.slice(0, 80),
+      context: null,
+      context_trigger: null,
+      priority: 3,
+    }
+  }
+
   const { data, error } = await supabase
     .from('items')
     .insert({

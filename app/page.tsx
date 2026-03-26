@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import Link from 'next/link'
 import { Item } from '@/lib/supabase'
 import {
   ContextTrigger,
@@ -49,7 +50,17 @@ export default function Home() {
   const [bannerOpen, setBannerOpen] = useState(false)
   const [reclassifying, setReclassifying] = useState(false)
   const [reclassifyResult, setReclassifyResult] = useState<number | null>(null)
+  const [briefText, setBriefText] = useState('')
+  const [briefLoading, setBriefLoading] = useState(false)
+  const [briefType, setBriefType] = useState<string | null>(null)
+  const [briefTime, setBriefTime] = useState<string | null>(null)
+  const [toast, setToast] = useState('')
+  const [duplicate, setDuplicate] = useState<{ existing: Item; pending: string } | null>(null)
+  const [cmdOpen, setCmdOpen] = useState(false)
+  const [cmdQuery, setCmdQuery] = useState('')
+  const [cmdResults, setCmdResults] = useState<Item[]>([])
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const cmdInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
@@ -106,15 +117,56 @@ export default function Home() {
     fetchContextItems(currentContext)
   }
 
-  async function handleSubmit(e?: React.FormEvent) {
+  function showToast(msg: string) {
+    setToast(msg)
+    setTimeout(() => setToast(''), 3000)
+  }
+
+  async function generateBrief(type: string) {
+    setBriefLoading(true)
+    setBriefText('')
+    setBriefType(type)
+    setBriefTime(null)
+    const res = await fetch('/api/brief/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type }),
+    })
+    if (!res.body) { setBriefLoading(false); return }
+    const reader = res.body.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      text += decoder.decode(value, { stream: true })
+      setBriefText(text)
+    }
+    setBriefLoading(false)
+    setBriefTime(new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }))
+  }
+
+  const searchItems = useCallback(async (q: string) => {
+    if (!q.trim()) { setCmdResults([]); return }
+    const { supabase } = await import('@/lib/supabase')
+    const { data } = await supabase
+      .from('items')
+      .select('*')
+      .ilike('raw_input', `%${q}%`)
+      .limit(8)
+    setCmdResults(data ?? [])
+  }, [])
+
+  async function handleSubmit(e?: React.FormEvent, force = false) {
     e?.preventDefault()
     if (!input.trim() || classifying) return
 
     setClassifying(true)
+    const rawInput = input.trim()
     const optimisticId = 'temp-' + Date.now()
     const optimistic: Item = {
       id: optimisticId,
-      raw_input: input.trim(),
+      raw_input: rawInput,
       ai_type: 'none',
       ai_summary: '...',
       ai_context: null,
@@ -130,10 +182,28 @@ export default function Home() {
     const res = await fetch('/api/items', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw_input: optimistic.raw_input }),
+      body: JSON.stringify({ raw_input: rawInput, force }),
     })
-    const newItem = await res.json()
-    setItems((prev) => prev.map((i) => (i.id === optimisticId ? newItem : i)))
+
+    if (!res.ok) {
+      setItems((prev) => prev.filter((i) => i.id !== optimisticId))
+      setInput(rawInput)
+      showToast('Kunne ikke gemme — prøv igen')
+      setClassifying(false)
+      return
+    }
+
+    const data = await res.json()
+
+    if (data.duplicate) {
+      setItems((prev) => prev.filter((i) => i.id !== optimisticId))
+      setInput(rawInput)
+      setDuplicate({ existing: data.existing_item, pending: rawInput })
+      setClassifying(false)
+      return
+    }
+
+    setItems((prev) => prev.map((i) => (i.id === optimisticId ? data : i)))
     setClassifying(false)
   }
 
@@ -228,10 +298,35 @@ export default function Home() {
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
-      handleSubmit()
-    }
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
+    if (e.key === 'Escape') setInput('')
   }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setCmdOpen((o) => !o)
+        setCmdQuery('')
+        setCmdResults([])
+      }
+      if (e.key === 'Escape') setCmdOpen(false)
+      if (e.key === '/' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
+        e.preventDefault()
+        textareaRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
+  useEffect(() => {
+    if (cmdOpen) setTimeout(() => cmdInputRef.current?.focus(), 50)
+  }, [cmdOpen])
+
+  useEffect(() => {
+    searchItems(cmdQuery)
+  }, [cmdQuery, searchItems])
 
   const top3 = items.filter((i) => i.ai_priority >= 4).slice(0, 3)
   const rest = items.filter((i) => !top3.find((t) => t.id === i.id))
@@ -240,8 +335,34 @@ export default function Home() {
     <main className="apai-root">
       <header className="apai-header">
         <span className="apai-logo">APAI</span>
-        <span className="apai-count">{items.length} i indbakken</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span className="apai-count">{items.length} i indbakken</span>
+          <Link href="/settings" style={{ color: '#333', textDecoration: 'none', fontSize: 16 }} title="Indstillinger">⚙</Link>
+        </div>
       </header>
+
+      {/* Brief */}
+      <section className="brief-section">
+        <div className="brief-btns">
+          {[['morning','🌅','Morgen'],['midday','☀️','Middag'],['shutdown','🌙','Shutdown']].map(([t,icon,label]) => (
+            <button key={t} className={`brief-btn ${briefType === t ? 'active' : ''}`} onClick={() => generateBrief(t)} disabled={briefLoading}>
+              {icon} {label}
+            </button>
+          ))}
+        </div>
+        {(briefLoading || briefText) && (
+          <div className="brief-box">
+            <p className="brief-text">
+              {briefText}
+              {briefLoading && <span className="brief-cursor">▌</span>}
+            </p>
+            {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
+          </div>
+        )}
+        {!briefText && !briefLoading && (
+          <p className="brief-empty">Tryk morgen, middag eller shutdown for en briefing.</p>
+        )}
+      </section>
 
       {/* Kontekst-banner */}
       {currentContext !== 'anytime' && contextItems.length > 0 && (
@@ -358,6 +479,55 @@ export default function Home() {
           <span className="reclassify-result">{reclassifyResult} opdateret</span>
         )}
       </div>
+
+      {/* Toast */}
+      {toast && <div className="toast">{toast}</div>}
+
+      {/* Duplikat-advarsel */}
+      {duplicate && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <p className="modal-title">Det her ligner noget du allerede har gemt</p>
+            <div className="modal-existing">
+              {duplicate.existing.ai_summary || duplicate.existing.raw_input}
+            </div>
+            <div className="modal-actions">
+              <button className="modal-btn" onClick={() => { setDuplicate(null); setInput(duplicate.pending); setTimeout(() => handleSubmit(undefined, true), 0) }}>
+                Gem alligevel
+              </button>
+              <button className="modal-btn secondary" onClick={() => setDuplicate(null)}>
+                Annuller
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Command palette */}
+      {cmdOpen && (
+        <div className="modal-overlay" onClick={() => setCmdOpen(false)}>
+          <div className="cmd-palette" onClick={(e) => e.stopPropagation()}>
+            <input
+              ref={cmdInputRef}
+              className="cmd-input"
+              placeholder="Søg i alle items…"
+              value={cmdQuery}
+              onChange={(e) => setCmdQuery(e.target.value)}
+            />
+            <div className="cmd-results">
+              {cmdResults.length === 0 && cmdQuery && (
+                <div className="cmd-empty">Ingen resultater</div>
+              )}
+              {cmdResults.map((item) => (
+                <div key={item.id} className="cmd-item">
+                  <span className="cmd-item-summary">{item.ai_summary || item.raw_input}</span>
+                  <span className="cmd-item-meta">{item.ai_type} · prio {item.ai_priority}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <style jsx global>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -770,6 +940,198 @@ export default function Home() {
         .reclassify-result {
           font-size: 11px;
           color: #E8FF3C;
+        }
+
+        .brief-section {
+          margin-bottom: 32px;
+        }
+
+        .brief-btns {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 12px;
+          flex-wrap: wrap;
+        }
+
+        .brief-btn {
+          background: none;
+          border: 1px solid #222;
+          border-radius: 6px;
+          color: #555;
+          font-family: inherit;
+          font-size: 11px;
+          padding: 6px 12px;
+          cursor: pointer;
+          transition: all 0.15s;
+          letter-spacing: 0.05em;
+        }
+
+        .brief-btn:hover { border-color: #444; color: #999; }
+        .brief-btn.active { border-color: #E8FF3C; color: #E8FF3C; }
+        .brief-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .brief-box {
+          background: #141414;
+          border: 1px solid #1E1E1E;
+          border-radius: 8px;
+          padding: 16px;
+        }
+
+        .brief-text {
+          font-size: 14px;
+          line-height: 1.7;
+          color: #C0C0C0;
+          white-space: pre-wrap;
+        }
+
+        .brief-cursor {
+          animation: blink 0.8s step-end infinite;
+          color: #E8FF3C;
+        }
+
+        .brief-timestamp {
+          display: block;
+          font-size: 10px;
+          color: #333;
+          margin-top: 10px;
+          letter-spacing: 0.05em;
+        }
+
+        .brief-empty {
+          font-size: 12px;
+          color: #2A2A2A;
+          letter-spacing: 0.02em;
+        }
+
+        .toast {
+          position: fixed;
+          bottom: 32px;
+          left: 50%;
+          transform: translateX(-50%);
+          background: #1A1A1A;
+          border: 1px solid #2A2A2A;
+          border-radius: 6px;
+          padding: 10px 20px;
+          font-size: 13px;
+          color: #E8FF3C;
+          z-index: 100;
+          white-space: nowrap;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.7);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 200;
+          padding: 20px;
+        }
+
+        .modal {
+          background: #141414;
+          border: 1px solid #2A2A2A;
+          border-radius: 10px;
+          padding: 24px;
+          max-width: 400px;
+          width: 100%;
+        }
+
+        .modal-title {
+          font-size: 13px;
+          color: #888;
+          margin-bottom: 12px;
+          letter-spacing: 0.02em;
+        }
+
+        .modal-existing {
+          font-size: 14px;
+          color: #E8E8E8;
+          padding: 12px;
+          background: #0E0E0E;
+          border-radius: 6px;
+          margin-bottom: 16px;
+          line-height: 1.5;
+        }
+
+        .modal-actions {
+          display: flex;
+          gap: 8px;
+        }
+
+        .modal-btn {
+          flex: 1;
+          padding: 10px;
+          border: 1px solid #E8FF3C;
+          border-radius: 6px;
+          background: none;
+          color: #E8FF3C;
+          font-family: inherit;
+          font-size: 12px;
+          cursor: pointer;
+          font-weight: 700;
+          transition: all 0.15s;
+        }
+
+        .modal-btn.secondary {
+          border-color: #333;
+          color: #555;
+        }
+
+        .cmd-palette {
+          background: #141414;
+          border: 1px solid #2A2A2A;
+          border-radius: 10px;
+          width: 100%;
+          max-width: 520px;
+          overflow: hidden;
+        }
+
+        .cmd-input {
+          width: 100%;
+          background: transparent;
+          border: none;
+          border-bottom: 1px solid #1E1E1E;
+          color: #E8E8E8;
+          font-family: inherit;
+          font-size: 15px;
+          padding: 16px 20px;
+          outline: none;
+        }
+
+        .cmd-results {
+          max-height: 300px;
+          overflow-y: auto;
+        }
+
+        .cmd-empty {
+          padding: 16px 20px;
+          font-size: 13px;
+          color: #333;
+        }
+
+        .cmd-item {
+          padding: 12px 20px;
+          border-bottom: 1px solid #1A1A1A;
+          cursor: pointer;
+          transition: background 0.1s;
+        }
+
+        .cmd-item:hover { background: #1A1A1A; }
+
+        .cmd-item-summary {
+          display: block;
+          font-size: 13px;
+          color: #D0D0D0;
+          margin-bottom: 2px;
+        }
+
+        .cmd-item-meta {
+          font-size: 10px;
+          color: #444;
+          letter-spacing: 0.05em;
+          text-transform: uppercase;
         }
 
         /* Mobile */

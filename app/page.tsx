@@ -28,24 +28,21 @@ const PRIORITY_DOT = (p: number) => {
   return '○○○'
 }
 
-function isMobile() {
-  if (typeof window === 'undefined') return false
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
-}
-
 export default function Home() {
   const [items, setItems] = useState<Item[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [classifying, setClassifying] = useState(false)
   const [recording, setRecording] = useState(false)
+  const [interimText, setInterimText] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
+  const recognitionRef = useRef<InstanceType<typeof window.SpeechRecognition> | null>(null)
 
   useEffect(() => {
     fetchItems()
-    if (!isMobile()) {
+    if (window.innerWidth > 768) {
       textareaRef.current?.focus()
     }
   }, [])
@@ -106,34 +103,47 @@ export default function Home() {
     })
   }
 
-  async function toggleRecording() {
-    if (recording) {
-      mediaRecorderRef.current?.stop()
-      return
-    }
+  function stopRecording() {
+    recognitionRef.current?.stop()
+    mediaRecorderRef.current?.stop()
+    setRecording(false)
+    setInterimText('')
+  }
 
-    // Prøv Web Speech API først
+  async function startRecording() {
     const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+      (window as Window & { SpeechRecognition?: typeof window.SpeechRecognition; webkitSpeechRecognition?: typeof window.SpeechRecognition }).SpeechRecognition ||
+      (window as Window & { SpeechRecognition?: typeof window.SpeechRecognition; webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition
 
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition()
       recognition.lang = 'da-DK'
-      recognition.interimResults = false
-      recognition.maxAlternatives = 1
+      recognition.continuous = false
+      recognition.interimResults = true
+      recognitionRef.current = recognition
       setRecording(true)
-      recognition.start()
-      recognition.onresult = (e: any) => {
-        const transcript = e.results[0][0].transcript
-        setInput((prev) => (prev ? prev + ' ' + transcript : transcript))
-        setRecording(false)
+
+      recognition.onresult = (e: SpeechRecognitionEvent) => {
+        let interim = ''
+        let final = ''
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          const t = e.results[i][0].transcript
+          if (e.results[i].isFinal) final += t
+          else interim += t
+        }
+        setInterimText(interim)
+        if (final) {
+          setInput((prev) => (prev ? prev + ' ' + final : final))
+          setInterimText('')
+        }
       }
-      recognition.onerror = () => setRecording(false)
-      recognition.onend = () => setRecording(false)
+      recognition.onerror = () => { setRecording(false); setInterimText('') }
+      recognition.onend = () => { setRecording(false); setInterimText('') }
+      recognition.start()
       return
     }
 
-    // Fallback: MediaRecorder → Whisper
+    // Fallback: hold-to-record → Whisper
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
@@ -144,9 +154,11 @@ export default function Home() {
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
         const form = new FormData()
         form.append('file', blob, 'audio.webm')
+        setInterimText('Transskriberer…')
         const res = await fetch('/api/transcribe', { method: 'POST', body: form })
         const data = await res.json()
         if (data.text) setInput((prev) => (prev ? prev + ' ' + data.text : data.text))
+        setInterimText('')
         setRecording(false)
       }
       recorder.start()
@@ -155,6 +167,11 @@ export default function Home() {
     } catch {
       setRecording(false)
     }
+  }
+
+  function handleMicPress() {
+    if (recording) stopRecording()
+    else startRecording()
   }
 
   function handleKeyDown(e: React.KeyboardEvent) {
@@ -175,35 +192,42 @@ export default function Home() {
 
       {/* Capture */}
       <section className="capture-section">
-        <textarea
-          ref={textareaRef}
-          className="capture-input"
-          placeholder="Hvad er i din hjerne lige nu…"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          rows={3}
-          disabled={classifying}
-        />
+        <div className="capture-box">
+          <textarea
+            ref={textareaRef}
+            className="capture-input"
+            placeholder="Hvad er i din hjerne lige nu…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={3}
+            disabled={classifying}
+          />
+          <button
+            className={`mic-btn ${recording ? 'recording' : ''}`}
+            onPointerDown={handleMicPress}
+            aria-label={recording ? 'Stop optagelse' : 'Optag tale'}
+          >
+            {recording ? '⏹' : '🎙'}
+          </button>
+        </div>
+        {(recording || interimText) && (
+          <div className="listening-bar">
+            <span className="listening-dot" />
+            <span className="listening-text">
+              {interimText || 'Lytter…'}
+            </span>
+          </div>
+        )}
         <div className="capture-footer">
           <span className="capture-hint">⌘↵ for at sende</span>
-          <div className="capture-actions">
-            <button
-              className={`mic-btn ${recording ? 'recording' : ''}`}
-              onClick={toggleRecording}
-              aria-label={recording ? 'Stop optagelse' : 'Optag tale'}
-              title={recording ? 'Stop optagelse' : 'Optag tale'}
-            >
-              {recording ? '⏹' : '🎙'}
-            </button>
-            <button
-              className="capture-btn"
-              onClick={() => handleSubmit()}
-              disabled={!input.trim() || classifying}
-            >
-              {classifying ? 'Klassificerer…' : 'Dump det'}
-            </button>
-          </div>
+          <button
+            className="capture-btn"
+            onClick={() => handleSubmit()}
+            disabled={!input.trim() || classifying}
+          >
+            {classifying ? 'Klassificerer…' : 'Dump det'}
+          </button>
         </div>
       </section>
 
@@ -278,6 +302,10 @@ export default function Home() {
           margin-bottom: 48px;
         }
 
+        .capture-box {
+          position: relative;
+        }
+
         .capture-input {
           width: 100%;
           background: #181818;
@@ -287,7 +315,7 @@ export default function Home() {
           font-family: inherit;
           font-size: 15px;
           line-height: 1.6;
-          padding: 16px;
+          padding: 16px 60px 16px 16px;
           resize: none;
           outline: none;
           transition: border-color 0.15s;
@@ -301,37 +329,22 @@ export default function Home() {
           color: #333;
         }
 
-        .capture-footer {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-top: 8px;
-        }
-
-        .capture-actions {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .capture-hint {
-          font-size: 11px;
-          color: #333;
-          letter-spacing: 0.05em;
-        }
-
         .mic-btn {
-          background: #181818;
-          border: 1px solid #2A2A2A;
-          border-radius: 6px;
+          position: absolute;
+          bottom: 12px;
+          right: 12px;
           width: 38px;
           height: 38px;
+          background: #222;
+          border: 1px solid #2A2A2A;
+          border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
           font-size: 16px;
           cursor: pointer;
           transition: all 0.15s;
+          touch-action: manipulation;
         }
 
         .mic-btn:hover {
@@ -340,12 +353,63 @@ export default function Home() {
 
         .mic-btn.recording {
           border-color: #E8FF3C;
+          background: #1A1E00;
           animation: pulse 1s ease-in-out infinite;
         }
 
         @keyframes pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(232,255,60,0.4); }
+          50% { box-shadow: 0 0 0 8px rgba(232,255,60,0); }
+        }
+
+        .listening-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-top: 8px;
+          padding: 6px 12px;
+          background: #181818;
+          border: 1px solid #2A2A2A;
+          border-radius: 6px;
+          min-height: 32px;
+        }
+
+        .listening-dot {
+          width: 6px;
+          height: 6px;
+          background: #E8FF3C;
+          border-radius: 50%;
+          flex-shrink: 0;
+          animation: blink 1s ease-in-out infinite;
+        }
+
+        @keyframes blink {
           0%, 100% { opacity: 1; }
-          50% { opacity: 0.4; }
+          50% { opacity: 0.2; }
+        }
+
+        .listening-text {
+          font-size: 12px;
+          color: #888;
+          font-style: italic;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .capture-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 8px;
+          gap: 8px;
+        }
+
+        .capture-hint {
+          font-size: 11px;
+          color: #333;
+          letter-spacing: 0.05em;
+          flex-shrink: 0;
         }
 
         .capture-btn {
@@ -375,13 +439,8 @@ export default function Home() {
           margin-bottom: 12px;
         }
 
-        .priority-section {
-          margin-bottom: 40px;
-        }
-
-        .inbox-section {
-          margin-bottom: 40px;
-        }
+        .priority-section { margin-bottom: 40px; }
+        .inbox-section { margin-bottom: 40px; }
 
         .item-list {
           display: flex;
@@ -394,15 +453,16 @@ export default function Home() {
           border: 1px solid #1E1E1E;
           border-radius: 8px;
           padding: 14px 16px;
+          min-height: 60px;
           display: grid;
           grid-template-columns: 1fr auto;
           gap: 8px;
           align-items: start;
-          transition: border-color 0.15s, transform 0.2s ease, opacity 0.2s ease;
           position: relative;
           overflow: hidden;
           touch-action: pan-y;
           user-select: none;
+          transition: border-color 0.15s;
         }
 
         .item-card:hover {
@@ -413,35 +473,30 @@ export default function Home() {
           border-left: 2px solid #E8FF3C;
         }
 
-        .item-card.swiping-right {
+        .item-card.flash-done {
           background: #0E1A00;
+          transition: background 0.3s;
         }
 
-        .item-card.swiping-left {
+        .item-card.flash-archive {
           background: #1A0E00;
+          transition: background 0.3s;
         }
 
         .swipe-hint {
           position: absolute;
           top: 50%;
           transform: translateY(-50%);
-          font-size: 11px;
-          letter-spacing: 0.1em;
+          font-size: 10px;
+          letter-spacing: 0.15em;
           text-transform: uppercase;
           opacity: 0;
-          transition: opacity 0.1s;
           pointer-events: none;
+          font-weight: 700;
         }
 
-        .swipe-hint.left-hint {
-          left: 16px;
-          color: #E8FF3C;
-        }
-
-        .swipe-hint.right-hint {
-          right: 16px;
-          color: #FF6B3C;
-        }
+        .swipe-hint.left-hint { left: 14px; color: #E8FF3C; }
+        .swipe-hint.right-hint { right: 14px; color: #FF6B3C; }
 
         .item-summary {
           font-size: 14px;
@@ -504,15 +559,8 @@ export default function Home() {
           white-space: nowrap;
         }
 
-        .action-btn:hover {
-          border-color: #444;
-          color: #999;
-        }
-
-        .action-btn.done:hover {
-          border-color: #E8FF3C;
-          color: #E8FF3C;
-        }
+        .action-btn:hover { border-color: #444; color: #999; }
+        .action-btn.done:hover { border-color: #E8FF3C; color: #E8FF3C; }
 
         .empty-state {
           text-align: center;
@@ -529,25 +577,29 @@ export default function Home() {
           }
 
           .capture-input {
-            font-size: 16px; /* undgår zoom på iOS */
-            min-height: 120px;
+            font-size: 16px;
+            min-height: 40vh;
+            padding-bottom: 64px;
           }
 
           .mic-btn {
-            width: 48px;
-            height: 48px;
-            font-size: 22px;
-            border-radius: 50%;
+            width: 56px;
+            height: 56px;
+            font-size: 24px;
+            bottom: 10px;
+            right: 10px;
           }
 
           .capture-btn {
-            padding: 12px 24px;
-            font-size: 13px;
+            flex: 1;
+            padding: 14px;
+            font-size: 14px;
+            text-align: center;
           }
 
-          .item-actions {
-            display: none; /* skjul knapper på mobil — brug swipe */
-          }
+          .capture-hint { display: none; }
+
+          .item-actions { display: none; }
         }
       `}</style>
     </main>
@@ -568,8 +620,8 @@ function ItemCard({
   const cardRef = useRef<HTMLDivElement>(null)
   const startXRef = useRef(0)
   const currentXRef = useRef(0)
-  const [swipeClass, setSwipeClass] = useState('')
   const [hintOpacity, setHintOpacity] = useState({ left: 0, right: 0 })
+  const [flashClass, setFlashClass] = useState('')
 
   function onTouchStart(e: React.TouchEvent) {
     startXRef.current = e.touches[0].clientX
@@ -582,31 +634,33 @@ function ItemCard({
     const card = cardRef.current
     if (!card) return
     card.style.transform = `translateX(${dx}px)`
+    card.style.transition = 'none'
     const ratio = Math.min(Math.abs(dx) / 80, 1)
-    if (dx > 0) {
-      setSwipeClass('swiping-right')
-      setHintOpacity({ left: ratio, right: 0 })
-    } else {
-      setSwipeClass('swiping-left')
-      setHintOpacity({ left: 0, right: ratio })
-    }
+    if (dx > 0) setHintOpacity({ left: ratio, right: 0 })
+    else setHintOpacity({ left: 0, right: ratio })
   }
 
   function onTouchEnd() {
     const dx = currentXRef.current
     const card = cardRef.current
     if (!card) return
+    card.style.transition = 'transform 0.2s ease'
     card.style.transform = ''
-    setSwipeClass('')
     setHintOpacity({ left: 0, right: 0 })
-    if (dx > 80) onDone(item.id)
-    else if (dx < -80) onArchive(item.id)
+
+    if (dx > 80) {
+      setFlashClass('flash-done')
+      setTimeout(() => onDone(item.id), 300)
+    } else if (dx < -80) {
+      setFlashClass('flash-archive')
+      setTimeout(() => onArchive(item.id), 300)
+    }
   }
 
   return (
     <div
       ref={cardRef}
-      className={`item-card ${item.ai_priority >= 4 ? 'priority-high' : ''} ${swipeClass}`}
+      className={`item-card ${item.ai_priority >= 4 ? 'priority-high' : ''} ${flashClass}`}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -616,10 +670,7 @@ function ItemCard({
       <div>
         <div className="item-summary">{item.ai_summary || item.raw_input}</div>
         <div className="item-meta">
-          <span
-            className="item-type"
-            style={{ background: color + '20', color }}
-          >
+          <span className="item-type" style={{ background: color + '20', color }}>
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
           {item.ai_context && (

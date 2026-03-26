@@ -6,7 +6,7 @@ const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 export const supabase = createClient(supabaseUrl, supabaseKey)
 
 export type ItemType = 'task' | 'note' | 'idea' | 'reminder' | 'someday' | 'none'
-export type ItemStatus = 'inbox' | 'done' | 'archived'
+export type ItemStatus = 'inbox' | 'done' | 'archived' | 'backlog'
 export type ContextTrigger = 'home' | 'work' | 'leaving' | 'morning' | 'evening' | 'anytime'
 
 export interface Item {

@@ -50,6 +50,8 @@ export default function Home() {
   const [bannerOpen, setBannerOpen] = useState(false)
   const [reclassifying, setReclassifying] = useState(false)
   const [reclassifyResult, setReclassifyResult] = useState<number | null>(null)
+  const [backlogItems, setBacklogItems] = useState<Item[]>([])
+  const [backlogOpen, setBacklogOpen] = useState(false)
   const [briefText, setBriefText] = useState('')
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefType, setBriefType] = useState<string | null>(null)
@@ -67,6 +69,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchItems()
+    fetchBacklog()
     if (window.innerWidth > 768) {
       textareaRef.current?.focus()
     }
@@ -207,8 +210,15 @@ export default function Home() {
     setClassifying(false)
   }
 
+  async function fetchBacklog() {
+    const res = await fetch('/api/items/backlog')
+    const data = await res.json()
+    setBacklogItems(Array.isArray(data) ? data : [])
+  }
+
   async function markDone(id: string) {
     setItems((prev) => prev.filter((i) => i.id !== id))
+    setBacklogItems((prev) => prev.filter((i) => i.id !== id))
     await fetch(`/api/items/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -218,11 +228,34 @@ export default function Home() {
 
   async function archive(id: string) {
     setItems((prev) => prev.filter((i) => i.id !== id))
+    setBacklogItems((prev) => prev.filter((i) => i.id !== id))
     await fetch(`/api/items/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'archived' }),
     })
+  }
+
+  async function moveToBacklog(id: string) {
+    setItems((prev) => prev.filter((i) => i.id !== id))
+    const res = await fetch(`/api/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'backlog' }),
+    })
+    const updated = await res.json()
+    setBacklogItems((prev) => [updated, ...prev])
+  }
+
+  async function moveToInbox(id: string) {
+    setBacklogItems((prev) => prev.filter((i) => i.id !== id))
+    const res = await fetch(`/api/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'inbox' }),
+    })
+    const updated = await res.json()
+    setItems((prev) => [updated, ...prev])
   }
 
   function stopRecording() {
@@ -344,7 +377,7 @@ export default function Home() {
       {/* Brief */}
       <section className="brief-section">
         <div className="brief-btns">
-          {[['morning','🌅','Morgen'],['midday','☀️','Middag'],['shutdown','🌙','Shutdown']].map(([t,icon,label]) => (
+          {[['morning','🌅','Morgen'],['midday','☀️','Middag'],['afternoon','🕓','Eftermiddag'],['shutdown','🌙','Shutdown']].map(([t,icon,label]) => (
             <button key={t} className={`brief-btn ${briefType === t ? 'active' : ''}`} onClick={() => generateBrief(t)} disabled={briefLoading}>
               {icon} {label}
             </button>
@@ -360,31 +393,9 @@ export default function Home() {
           </div>
         )}
         {!briefText && !briefLoading && (
-          <p className="brief-empty">Tryk morgen, middag eller shutdown for en briefing.</p>
+          <p className="brief-empty">Tryk en knap for en kort briefing.</p>
         )}
       </section>
-
-      {/* Kontekst-banner */}
-      {currentContext !== 'anytime' && contextItems.length > 0 && (
-        <div className="context-banner">
-          <button className="context-banner-header" onClick={() => setBannerOpen((o) => !o)}>
-            <span>{CONTEXT_META[currentContext].icon} {CONTEXT_META[currentContext].label}</span>
-            <span className="context-banner-count">
-              {contextItems.length} {bannerOpen ? '▲' : '▼'}
-            </span>
-          </button>
-          {bannerOpen && (
-            <div className="context-banner-items">
-              {contextItems.map((item) => (
-                <div key={item.id} className="context-item">
-                  <span className="context-item-summary">{item.ai_summary || item.raw_input}</span>
-                  {item.ai_context && <span className="context-item-ctx">↳ {item.ai_context}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Capture */}
       <section className="capture-section">
@@ -433,7 +444,7 @@ export default function Home() {
           <h2 className="section-label">Vigtigst nu</h2>
           <div className="item-list">
             {top3.map((item) => (
-              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} />
+              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToBacklog} />
             ))}
           </div>
         </section>
@@ -445,7 +456,7 @@ export default function Home() {
           <h2 className="section-label">Indbakke</h2>
           <div className="item-list">
             {rest.map((item) => (
-              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} />
+              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToBacklog} />
             ))}
           </div>
         </section>
@@ -453,8 +464,25 @@ export default function Home() {
 
       {!loading && items.length === 0 && (
         <div className="empty-state">
-          Indbakken er tom.<br />Dump din første tanke herover.
+          Alt er styr.<br />Dump din næste tanke herover.
         </div>
+      )}
+
+      {/* Backlog */}
+      {backlogItems.length > 0 && (
+        <section className="backlog-section">
+          <button className="backlog-toggle" onClick={() => setBacklogOpen((o) => !o)}>
+            <span>Backlog</span>
+            <span className="backlog-count">{backlogItems.length} {backlogOpen ? '▲' : '▼'}</span>
+          </button>
+          {backlogOpen && (
+            <div className="item-list" style={{ marginTop: 8 }}>
+              {backlogItems.map((item) => (
+                <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToInbox} isBacklog />
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       {/* Kontekst-vælger */}
@@ -562,7 +590,7 @@ export default function Home() {
 
         .apai-count {
           font-size: 11px;
-          color: #444;
+          color: #666;
           letter-spacing: 0.1em;
         }
 
@@ -703,7 +731,7 @@ export default function Home() {
           font-size: 10px;
           letter-spacing: 0.3em;
           text-transform: uppercase;
-          color: #444;
+          color: #666;
           margin-bottom: 12px;
         }
 
@@ -769,7 +797,7 @@ export default function Home() {
         .item-summary {
           font-size: 14px;
           line-height: 1.5;
-          color: #D0D0D0;
+          color: #E0E0E0;
         }
 
         .item-meta {
@@ -791,18 +819,18 @@ export default function Home() {
 
         .item-context {
           font-size: 11px;
-          color: #555;
+          color: #666;
         }
 
         .item-priority {
           font-size: 10px;
-          color: #333;
+          color: #444;
           letter-spacing: 0.05em;
         }
 
         .item-raw {
           font-size: 11px;
-          color: #2A2A2A;
+          color: #3A3A3A;
           margin-top: 4px;
           line-height: 1.4;
           font-style: italic;
@@ -816,9 +844,9 @@ export default function Home() {
 
         .action-btn {
           background: none;
-          border: 1px solid #222;
+          border: 1px solid #2A2A2A;
           border-radius: 4px;
-          color: #444;
+          color: #666;
           font-family: inherit;
           font-size: 11px;
           padding: 4px 8px;
@@ -827,7 +855,7 @@ export default function Home() {
           white-space: nowrap;
         }
 
-        .action-btn:hover { border-color: #444; color: #999; }
+        .action-btn:hover { border-color: #555; color: #AAA; }
         .action-btn.done:hover { border-color: #E8FF3C; color: #E8FF3C; }
 
         .empty-state {
@@ -940,6 +968,36 @@ export default function Home() {
         .reclassify-result {
           font-size: 11px;
           color: #E8FF3C;
+        }
+
+        .backlog-section {
+          margin-top: 40px;
+          padding-top: 24px;
+          border-top: 1px solid #1A1A1A;
+        }
+
+        .backlog-toggle {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: none;
+          border: none;
+          color: #555;
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.3em;
+          text-transform: uppercase;
+          cursor: pointer;
+          padding: 0;
+          margin-bottom: 4px;
+        }
+
+        .backlog-toggle:hover { color: #888; }
+
+        .backlog-count {
+          font-size: 10px;
+          letter-spacing: 0.05em;
         }
 
         .brief-section {
@@ -1174,10 +1232,14 @@ function ItemCard({
   item,
   onDone,
   onArchive,
+  onBacklog,
+  isBacklog = false,
 }: {
   item: Item
   onDone: (id: string) => void
   onArchive: (id: string) => void
+  onBacklog?: (id: string) => void
+  isBacklog?: boolean
 }) {
   const isTemp = item.id.startsWith('temp-')
   const color = TYPE_COLORS[item.ai_type] || '#555'
@@ -1248,12 +1310,14 @@ function ItemCard({
       </div>
       {!isTemp && (
         <div className="item-actions">
-          <button className="action-btn done" onClick={() => onDone(item.id)}>
-            Færdig
-          </button>
-          <button className="action-btn" onClick={() => onArchive(item.id)}>
-            Arkiver
-          </button>
+          <button className="action-btn done" onClick={() => onDone(item.id)}>Færdig</button>
+          {!isBacklog && onBacklog && (
+            <button className="action-btn" onClick={() => onBacklog(item.id)}>Backlog</button>
+          )}
+          {isBacklog && (
+            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>→ Indbakke</button>
+          )}
+          <button className="action-btn" onClick={() => onArchive(item.id)}>Arkiver</button>
         </div>
       )}
     </div>

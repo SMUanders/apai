@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { ItemType } from './supabase'
+import { ItemType, ContextTrigger } from './supabase'
 
 const client = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -9,6 +9,7 @@ export interface Classification {
   type: ItemType
   summary: string
   context: string | null
+  context_trigger: ContextTrigger | null
   priority: number
 }
 
@@ -23,6 +24,7 @@ JSON-format:
   "type": "task" | "note" | "idea" | "reminder" | "someday" | "none",
   "summary": "kort omskrivning på dansk (max 10 ord)",
   "context": "hvornår/hvor relevant, fx 'når du kommer hjem' — eller null",
+  "context_trigger": "home" | "work" | "leaving" | "morning" | "evening" | "anytime" | null,
   "priority": 1-5
 }
 
@@ -33,6 +35,15 @@ Typedefinitioner:
 - note: information der skal gemmes
 - someday: måske en dag, ikke nu
 - none: kræver ingen handling
+
+context_trigger regler:
+- "home"     → noget der skal gøres/huskes hjemme
+- "work"     → noget der skal gøres/huskes på arbejde
+- "leaving"  → noget der skal huskes når man forlader et sted
+- "morning"  → relevant om morgenen
+- "evening"  → relevant om aftenen / på vej hjem
+- "anytime"  → ingen specifik kontekst
+- null       → ved ikke / irrelevant
 
 Prioritet:
 - 5 = glem det ikke, gør det snart
@@ -63,6 +74,7 @@ export async function classifyInput(rawInput: string): Promise<Classification> {
     type: parsed.type as ItemType,
     summary: parsed.summary,
     context: parsed.context || null,
+    context_trigger: parsed.context_trigger || null,
     priority: Number(parsed.priority),
   }
 }

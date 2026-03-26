@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
       ai_summary: classification.summary,
       ai_context: classification.context,
       ai_priority: classification.priority,
+      context_trigger: classification.context_trigger,
       status: 'inbox',
     })
     .select()

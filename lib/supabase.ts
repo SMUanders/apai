@@ -7,6 +7,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 
 export type ItemType = 'task' | 'note' | 'idea' | 'reminder' | 'someday' | 'none'
 export type ItemStatus = 'inbox' | 'done' | 'archived'
+export type ContextTrigger = 'home' | 'work' | 'leaving' | 'morning' | 'evening' | 'anytime'
 
 export interface Item {
   id: string
@@ -15,6 +16,7 @@ export interface Item {
   ai_summary: string | null
   ai_context: string | null
   ai_priority: number
+  context_trigger: ContextTrigger | null
   status: ItemStatus
   created_at: string
   updated_at: string

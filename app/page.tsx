@@ -2,6 +2,15 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Item } from '@/lib/supabase'
+import {
+  ContextTrigger,
+  CONTEXT_META,
+  detectCurrentContext,
+  getRelevantTriggers,
+  getContextOverride,
+  setContextOverride,
+  clearContextOverride,
+} from '@/lib/context'
 
 const TYPE_LABELS: Record<string, string> = {
   task: 'Opgave',
@@ -35,6 +44,11 @@ export default function Home() {
   const [classifying, setClassifying] = useState(false)
   const [recording, setRecording] = useState(false)
   const [interimText, setInterimText] = useState('')
+  const [contextItems, setContextItems] = useState<Item[]>([])
+  const [currentContext, setCurrentContext] = useState<ContextTrigger>('anytime')
+  const [bannerOpen, setBannerOpen] = useState(false)
+  const [reclassifying, setReclassifying] = useState(false)
+  const [reclassifyResult, setReclassifyResult] = useState<number | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -45,6 +59,10 @@ export default function Home() {
     if (window.innerWidth > 768) {
       textareaRef.current?.focus()
     }
+    const override = getContextOverride()
+    const ctx = override ?? detectCurrentContext()
+    setCurrentContext(ctx)
+    fetchContextItems(ctx)
   }, [])
 
   async function fetchItems() {
@@ -53,6 +71,39 @@ export default function Home() {
     const data = await res.json()
     setItems(Array.isArray(data) ? data : [])
     setLoading(false)
+  }
+
+  async function fetchContextItems(ctx: ContextTrigger) {
+    const triggers = getRelevantTriggers(ctx)
+    if (ctx === 'anytime') { setContextItems([]); return }
+    const res = await fetch(`/api/items/context?triggers=${triggers.join(',')}`)
+    const data = await res.json()
+    setContextItems(Array.isArray(data) ? data : [])
+  }
+
+  function handleContextSelect(ctx: ContextTrigger) {
+    if (ctx === currentContext) {
+      clearContextOverride()
+      const auto = detectCurrentContext()
+      setCurrentContext(auto)
+      fetchContextItems(auto)
+    } else {
+      setContextOverride(ctx)
+      setCurrentContext(ctx)
+      fetchContextItems(ctx)
+    }
+    setBannerOpen(false)
+  }
+
+  async function handleReclassify() {
+    setReclassifying(true)
+    setReclassifyResult(null)
+    const res = await fetch('/api/items/reclassify', { method: 'POST' })
+    const data = await res.json()
+    setReclassifyResult(data.updated ?? 0)
+    setReclassifying(false)
+    fetchItems()
+    fetchContextItems(currentContext)
   }
 
   async function handleSubmit(e?: React.FormEvent) {
@@ -68,6 +119,7 @@ export default function Home() {
       ai_summary: '...',
       ai_context: null,
       ai_priority: 3,
+      context_trigger: null,
       status: 'inbox',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -191,6 +243,28 @@ export default function Home() {
         <span className="apai-count">{items.length} i indbakken</span>
       </header>
 
+      {/* Kontekst-banner */}
+      {currentContext !== 'anytime' && contextItems.length > 0 && (
+        <div className="context-banner">
+          <button className="context-banner-header" onClick={() => setBannerOpen((o) => !o)}>
+            <span>{CONTEXT_META[currentContext].icon} {CONTEXT_META[currentContext].label}</span>
+            <span className="context-banner-count">
+              {contextItems.length} {bannerOpen ? '▲' : '▼'}
+            </span>
+          </button>
+          {bannerOpen && (
+            <div className="context-banner-items">
+              {contextItems.map((item) => (
+                <div key={item.id} className="context-item">
+                  <span className="context-item-summary">{item.ai_summary || item.raw_input}</span>
+                  {item.ai_context && <span className="context-item-ctx">↳ {item.ai_context}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Capture */}
       <section className="capture-section">
         <div className="capture-box">
@@ -261,6 +335,29 @@ export default function Home() {
           Indbakken er tom.<br />Dump din første tanke herover.
         </div>
       )}
+
+      {/* Kontekst-vælger */}
+      <div className="context-picker">
+        {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
+          <button
+            key={ctx}
+            className={`context-pick-btn ${currentContext === ctx ? 'active' : ''}`}
+            onClick={() => handleContextSelect(ctx)}
+          >
+            {CONTEXT_META[ctx].icon}
+          </button>
+        ))}
+      </div>
+
+      {/* Reklassificér */}
+      <div className="reclassify-row">
+        <button className="reclassify-btn" onClick={handleReclassify} disabled={reclassifying}>
+          {reclassifying ? 'Opdaterer…' : 'Opdatér klassificering'}
+        </button>
+        {reclassifyResult !== null && (
+          <span className="reclassify-result">{reclassifyResult} opdateret</span>
+        )}
+      </div>
 
       <style jsx global>{`
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -569,6 +666,110 @@ export default function Home() {
           font-size: 14px;
           line-height: 2;
           margin-top: 80px;
+        }
+
+        .context-banner {
+          margin-bottom: 24px;
+          border: 1px solid #2A2A2A;
+          border-radius: 8px;
+          overflow: hidden;
+        }
+
+        .context-banner-header {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 10px 14px;
+          background: #141414;
+          border: none;
+          color: #E8E8E8;
+          font-family: inherit;
+          font-size: 13px;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .context-banner-header:hover { background: #1A1A1A; }
+
+        .context-banner-count {
+          font-size: 11px;
+          color: #555;
+          letter-spacing: 0.05em;
+        }
+
+        .context-banner-items {
+          border-top: 1px solid #1E1E1E;
+          display: flex;
+          flex-direction: column;
+          gap: 1px;
+        }
+
+        .context-item {
+          padding: 10px 14px;
+          background: #0E0E0E;
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .context-item-summary {
+          font-size: 13px;
+          color: #C0C0C0;
+        }
+
+        .context-item-ctx {
+          font-size: 11px;
+          color: #444;
+        }
+
+        .context-picker {
+          display: flex;
+          gap: 8px;
+          justify-content: center;
+          margin-top: 48px;
+          padding-top: 24px;
+          border-top: 1px solid #1A1A1A;
+        }
+
+        .context-pick-btn {
+          background: none;
+          border: 1px solid #222;
+          border-radius: 6px;
+          padding: 8px 14px;
+          font-size: 18px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+
+        .context-pick-btn:hover { border-color: #444; }
+        .context-pick-btn.active { border-color: #E8FF3C; background: #1A1E00; }
+
+        .reclassify-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          justify-content: center;
+          margin-top: 16px;
+        }
+
+        .reclassify-btn {
+          background: none;
+          border: none;
+          color: #2A2A2A;
+          font-family: inherit;
+          font-size: 11px;
+          cursor: pointer;
+          letter-spacing: 0.05em;
+          transition: color 0.15s;
+        }
+
+        .reclassify-btn:hover { color: #555; }
+        .reclassify-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        .reclassify-result {
+          font-size: 11px;
+          color: #E8FF3C;
         }
 
         /* Mobile */

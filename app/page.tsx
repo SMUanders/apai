@@ -38,7 +38,7 @@ export default function Home() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
-  const recognitionRef = useRef<InstanceType<typeof window.SpeechRecognition> | null>(null)
+  const recognitionRef = useRef<{ stop: () => void } | null>(null)
 
   useEffect(() => {
     fetchItems()
@@ -111,19 +111,20 @@ export default function Home() {
   }
 
   async function startRecording() {
-    const SpeechRecognition =
-      (window as Window & { SpeechRecognition?: typeof window.SpeechRecognition; webkitSpeechRecognition?: typeof window.SpeechRecognition }).SpeechRecognition ||
-      (window as Window & { SpeechRecognition?: typeof window.SpeechRecognition; webkitSpeechRecognition?: typeof window.SpeechRecognition }).webkitSpeechRecognition
+    type SREvent = { resultIndex: number; results: { isFinal: boolean; 0: { transcript: string } }[] }
+    type SR = { start: () => void; stop: () => void; lang: string; continuous: boolean; interimResults: boolean; onresult: ((e: SREvent) => void) | null; onerror: (() => void) | null; onend: (() => void) | null }
+    const w = window as Window & { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR }
+    const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition
 
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition()
+    if (SpeechRecognitionCtor) {
+      const recognition = new SpeechRecognitionCtor()
       recognition.lang = 'da-DK'
       recognition.continuous = false
       recognition.interimResults = true
       recognitionRef.current = recognition
       setRecording(true)
 
-      recognition.onresult = (e: SpeechRecognitionEvent) => {
+      recognition.onresult = (e: SREvent) => {
         let interim = ''
         let final = ''
         for (let i = e.resultIndex; i < e.results.length; i++) {

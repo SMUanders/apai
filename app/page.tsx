@@ -28,23 +28,33 @@ const PRIORITY_DOT = (p: number) => {
   return '○○○'
 }
 
+function isMobile() {
+  if (typeof window === 'undefined') return false
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
+
 export default function Home() {
   const [items, setItems] = useState<Item[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [classifying, setClassifying] = useState(false)
+  const [recording, setRecording] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const chunksRef = useRef<Blob[]>([])
 
   useEffect(() => {
     fetchItems()
-    textareaRef.current?.focus()
+    if (!isMobile()) {
+      textareaRef.current?.focus()
+    }
   }, [])
 
   async function fetchItems() {
     setLoading(true)
     const res = await fetch('/api/items')
     const data = await res.json()
-    setItems(data)
+    setItems(Array.isArray(data) ? data : [])
     setLoading(false)
   }
 
@@ -96,14 +106,65 @@ export default function Home() {
     })
   }
 
-  const top3 = items.filter((i) => i.ai_priority >= 4).slice(0, 3)
-  const rest = items.filter((i) => !top3.find((t) => t.id === i.id))
+  async function toggleRecording() {
+    if (recording) {
+      mediaRecorderRef.current?.stop()
+      return
+    }
+
+    // Prøv Web Speech API først
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition()
+      recognition.lang = 'da-DK'
+      recognition.interimResults = false
+      recognition.maxAlternatives = 1
+      setRecording(true)
+      recognition.start()
+      recognition.onresult = (e: any) => {
+        const transcript = e.results[0][0].transcript
+        setInput((prev) => (prev ? prev + ' ' + transcript : transcript))
+        setRecording(false)
+      }
+      recognition.onerror = () => setRecording(false)
+      recognition.onend = () => setRecording(false)
+      return
+    }
+
+    // Fallback: MediaRecorder → Whisper
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const recorder = new MediaRecorder(stream)
+      chunksRef.current = []
+      recorder.ondataavailable = (e) => chunksRef.current.push(e.data)
+      recorder.onstop = async () => {
+        stream.getTracks().forEach((t) => t.stop())
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' })
+        const form = new FormData()
+        form.append('file', blob, 'audio.webm')
+        const res = await fetch('/api/transcribe', { method: 'POST', body: form })
+        const data = await res.json()
+        if (data.text) setInput((prev) => (prev ? prev + ' ' + data.text : data.text))
+        setRecording(false)
+      }
+      recorder.start()
+      mediaRecorderRef.current = recorder
+      setRecording(true)
+    } catch {
+      setRecording(false)
+    }
+  }
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       handleSubmit()
     }
   }
+
+  const top3 = items.filter((i) => i.ai_priority >= 4).slice(0, 3)
+  const rest = items.filter((i) => !top3.find((t) => t.id === i.id))
 
   return (
     <main className="apai-root">
@@ -126,13 +187,23 @@ export default function Home() {
         />
         <div className="capture-footer">
           <span className="capture-hint">⌘↵ for at sende</span>
-          <button
-            className="capture-btn"
-            onClick={() => handleSubmit()}
-            disabled={!input.trim() || classifying}
-          >
-            {classifying ? 'Klassificerer…' : 'Dump det'}
-          </button>
+          <div className="capture-actions">
+            <button
+              className={`mic-btn ${recording ? 'recording' : ''}`}
+              onClick={toggleRecording}
+              aria-label={recording ? 'Stop optagelse' : 'Optag tale'}
+              title={recording ? 'Stop optagelse' : 'Optag tale'}
+            >
+              {recording ? '⏹' : '🎙'}
+            </button>
+            <button
+              className="capture-btn"
+              onClick={() => handleSubmit()}
+              disabled={!input.trim() || classifying}
+            >
+              {classifying ? 'Klassificerer…' : 'Dump det'}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -237,10 +308,44 @@ export default function Home() {
           margin-top: 8px;
         }
 
+        .capture-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
         .capture-hint {
           font-size: 11px;
           color: #333;
           letter-spacing: 0.05em;
+        }
+
+        .mic-btn {
+          background: #181818;
+          border: 1px solid #2A2A2A;
+          border-radius: 6px;
+          width: 38px;
+          height: 38px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          cursor: pointer;
+          transition: all 0.15s;
+        }
+
+        .mic-btn:hover {
+          border-color: #444;
+        }
+
+        .mic-btn.recording {
+          border-color: #E8FF3C;
+          animation: pulse 1s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.4; }
         }
 
         .capture-btn {
@@ -293,7 +398,11 @@ export default function Home() {
           grid-template-columns: 1fr auto;
           gap: 8px;
           align-items: start;
-          transition: border-color 0.15s;
+          transition: border-color 0.15s, transform 0.2s ease, opacity 0.2s ease;
+          position: relative;
+          overflow: hidden;
+          touch-action: pan-y;
+          user-select: none;
         }
 
         .item-card:hover {
@@ -302,6 +411,36 @@ export default function Home() {
 
         .item-card.priority-high {
           border-left: 2px solid #E8FF3C;
+        }
+
+        .item-card.swiping-right {
+          background: #0E1A00;
+        }
+
+        .item-card.swiping-left {
+          background: #1A0E00;
+        }
+
+        .swipe-hint {
+          position: absolute;
+          top: 50%;
+          transform: translateY(-50%);
+          font-size: 11px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          opacity: 0;
+          transition: opacity 0.1s;
+          pointer-events: none;
+        }
+
+        .swipe-hint.left-hint {
+          left: 16px;
+          color: #E8FF3C;
+        }
+
+        .swipe-hint.right-hint {
+          right: 16px;
+          color: #FF6B3C;
         }
 
         .item-summary {
@@ -382,6 +521,34 @@ export default function Home() {
           line-height: 2;
           margin-top: 80px;
         }
+
+        /* Mobile */
+        @media (max-width: 600px) {
+          .apai-root {
+            padding: 24px 16px 100px;
+          }
+
+          .capture-input {
+            font-size: 16px; /* undgår zoom på iOS */
+            min-height: 120px;
+          }
+
+          .mic-btn {
+            width: 48px;
+            height: 48px;
+            font-size: 22px;
+            border-radius: 50%;
+          }
+
+          .capture-btn {
+            padding: 12px 24px;
+            font-size: 13px;
+          }
+
+          .item-actions {
+            display: none; /* skjul knapper på mobil — brug swipe */
+          }
+        }
       `}</style>
     </main>
   )
@@ -398,9 +565,54 @@ function ItemCard({
 }) {
   const isTemp = item.id.startsWith('temp-')
   const color = TYPE_COLORS[item.ai_type] || '#555'
+  const cardRef = useRef<HTMLDivElement>(null)
+  const startXRef = useRef(0)
+  const currentXRef = useRef(0)
+  const [swipeClass, setSwipeClass] = useState('')
+  const [hintOpacity, setHintOpacity] = useState({ left: 0, right: 0 })
+
+  function onTouchStart(e: React.TouchEvent) {
+    startXRef.current = e.touches[0].clientX
+    currentXRef.current = 0
+  }
+
+  function onTouchMove(e: React.TouchEvent) {
+    const dx = e.touches[0].clientX - startXRef.current
+    currentXRef.current = dx
+    const card = cardRef.current
+    if (!card) return
+    card.style.transform = `translateX(${dx}px)`
+    const ratio = Math.min(Math.abs(dx) / 80, 1)
+    if (dx > 0) {
+      setSwipeClass('swiping-right')
+      setHintOpacity({ left: ratio, right: 0 })
+    } else {
+      setSwipeClass('swiping-left')
+      setHintOpacity({ left: 0, right: ratio })
+    }
+  }
+
+  function onTouchEnd() {
+    const dx = currentXRef.current
+    const card = cardRef.current
+    if (!card) return
+    card.style.transform = ''
+    setSwipeClass('')
+    setHintOpacity({ left: 0, right: 0 })
+    if (dx > 80) onDone(item.id)
+    else if (dx < -80) onArchive(item.id)
+  }
 
   return (
-    <div className={`item-card ${item.ai_priority >= 4 ? 'priority-high' : ''}`}>
+    <div
+      ref={cardRef}
+      className={`item-card ${item.ai_priority >= 4 ? 'priority-high' : ''} ${swipeClass}`}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>Færdig</span>
+      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>Arkiver</span>
       <div>
         <div className="item-summary">{item.ai_summary || item.raw_input}</div>
         <div className="item-meta">

@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
       context: null,
       context_trigger: null,
       priority: 3,
+      due_at: null,
     }
   }
 
@@ -75,6 +76,7 @@ export async function POST(req: NextRequest) {
       ai_context: classification.context,
       ai_priority: classification.priority,
       context_trigger: classification.context_trigger,
+      due_at: classification.due_at,
       status: 'inbox',
     })
     .select()

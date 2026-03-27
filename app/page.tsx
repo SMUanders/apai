@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { Mic, Square, Settings, Search, X, Volume2, VolumeX } from 'lucide-react'
 import { Item } from '@/lib/supabase'
 import {
   ContextTrigger,
@@ -38,6 +39,42 @@ const PRIORITY_DOT = (p: number) => {
   return '○○○'
 }
 
+function formatDueAt(due_at: string): string {
+  const due = new Date(due_at)
+  const now = new Date()
+  const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
+  const diffDays = Math.round((dueDay.getTime() - nowDay.getTime()) / 86400000)
+  const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0
+  const timeStr = hasTime
+    ? ' ' + due.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+    : ''
+
+  if (diffDays === 0) return `I dag${timeStr}`
+  if (diffDays === 1) return `I morgen${timeStr}`
+  if (diffDays === -1) return `I går${timeStr}`
+  if (diffDays > 1 && diffDays < 7) return `Om ${diffDays} dage${timeStr}`
+  if (diffDays < 0 && diffDays > -7) return `${Math.abs(diffDays)} dage siden`
+  return (
+    due.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' }) + timeStr
+  )
+}
+
+const FILTERS = [
+  { id: 'alle', label: 'Alle' },
+  { id: 'task', label: 'Opgaver' },
+  { id: 'reminder', label: 'Påmindelser' },
+  { id: 'idea', label: 'Idéer' },
+  { id: 'med-dato', label: 'Med dato' },
+  { id: 'hoj-prioritet', label: 'Høj prioritet' },
+]
+
+const SORTS = [
+  { id: 'prioritet', label: 'Prioritet' },
+  { id: 'dato', label: 'Dato' },
+  { id: 'oprettet', label: 'Oprettet' },
+]
+
 export default function Home() {
   const [items, setItems] = useState<Item[]>([])
   const [input, setInput] = useState('')
@@ -61,8 +98,25 @@ export default function Home() {
   const [cmdOpen, setCmdOpen] = useState(false)
   const [cmdQuery, setCmdQuery] = useState('')
   const [cmdResults, setCmdResults] = useState<Item[]>([])
+  // Filter + sort
+  const [activeFilter, setActiveFilter] = useState('alle')
+  const [activeSort, setActiveSort] = useState('prioritet')
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
+  // Inline search
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  // Ask APAI
+  const [askOpen, setAskOpen] = useState(false)
+  const [askQuery, setAskQuery] = useState('')
+  const [askLoading, setAskLoading] = useState(false)
+  const [askResult, setAskResult] = useState<{ answer: string; items: Item[] } | null>(null)
+  // Speech
+  const [speaking, setSpeaking] = useState(false)
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const cmdInputRef = useRef<HTMLInputElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const askInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
@@ -89,7 +143,10 @@ export default function Home() {
 
   async function fetchContextItems(ctx: ContextTrigger) {
     const triggers = getRelevantTriggers(ctx)
-    if (ctx === 'anytime') { setContextItems([]); return }
+    if (ctx === 'anytime') {
+      setContextItems([])
+      return
+    }
     const res = await fetch(`/api/items/context?triggers=${triggers.join(',')}`)
     const data = await res.json()
     setContextItems(Array.isArray(data) ? data : [])
@@ -130,12 +187,17 @@ export default function Home() {
     setBriefText('')
     setBriefType(type)
     setBriefTime(null)
+    setSpeaking(false)
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel()
     const res = await fetch('/api/brief/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type }),
     })
-    if (!res.body) { setBriefLoading(false); return }
+    if (!res.body) {
+      setBriefLoading(false)
+      return
+    }
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let text = ''
@@ -146,11 +208,34 @@ export default function Home() {
       setBriefText(text)
     }
     setBriefLoading(false)
-    setBriefTime(new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }))
+    setBriefTime(
+      new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+    )
+  }
+
+  function toggleSpeak() {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return
+    if (speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    const utterance = new SpeechSynthesisUtterance(briefText)
+    utterance.lang = 'da-DK'
+    const voices = window.speechSynthesis.getVoices()
+    const daVoice = voices.find((v) => v.lang.startsWith('da'))
+    if (daVoice) utterance.voice = daVoice
+    utterance.onend = () => setSpeaking(false)
+    utterance.onerror = () => setSpeaking(false)
+    window.speechSynthesis.speak(utterance)
+    setSpeaking(true)
   }
 
   const searchItems = useCallback(async (q: string) => {
-    if (!q.trim()) { setCmdResults([]); return }
+    if (!q.trim()) {
+      setCmdResults([])
+      return
+    }
     const { supabase } = await import('@/lib/supabase')
     const { data } = await supabase
       .from('items')
@@ -159,6 +244,24 @@ export default function Home() {
       .limit(8)
     setCmdResults(data ?? [])
   }, [])
+
+  async function handleAsk() {
+    if (!askQuery.trim() || askLoading) return
+    setAskLoading(true)
+    setAskResult(null)
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: askQuery, items }),
+      })
+      const data = await res.json()
+      setAskResult(data)
+    } catch {
+      setAskResult({ answer: 'Noget gik galt — prøv igen.', items: [] })
+    }
+    setAskLoading(false)
+  }
 
   async function handleSubmit(e?: React.FormEvent, force = false) {
     e?.preventDefault()
@@ -175,6 +278,7 @@ export default function Home() {
       ai_context: null,
       ai_priority: 3,
       context_trigger: null,
+      due_at: null,
       status: 'inbox',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -266,9 +370,24 @@ export default function Home() {
   }
 
   async function startRecording() {
-    type SREvent = { resultIndex: number; results: { isFinal: boolean; 0: { transcript: string } }[] }
-    type SR = { start: () => void; stop: () => void; lang: string; continuous: boolean; interimResults: boolean; onresult: ((e: SREvent) => void) | null; onerror: (() => void) | null; onend: (() => void) | null }
-    const w = window as Window & { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR }
+    type SREvent = {
+      resultIndex: number
+      results: { isFinal: boolean; 0: { transcript: string } }[]
+    }
+    type SR = {
+      start: () => void
+      stop: () => void
+      lang: string
+      continuous: boolean
+      interimResults: boolean
+      onresult: ((e: SREvent) => void) | null
+      onerror: (() => void) | null
+      onend: (() => void) | null
+    }
+    const w = window as Window & {
+      SpeechRecognition?: new () => SR
+      webkitSpeechRecognition?: new () => SR
+    }
     const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition
 
     if (SpeechRecognitionCtor) {
@@ -293,13 +412,19 @@ export default function Home() {
           setInterimText('')
         }
       }
-      recognition.onerror = () => { setRecording(false); setInterimText('') }
-      recognition.onend = () => { setRecording(false); setInterimText('') }
+      recognition.onerror = () => {
+        setRecording(false)
+        setInterimText('')
+      }
+      recognition.onend = () => {
+        setRecording(false)
+        setInterimText('')
+      }
       recognition.start()
       return
     }
 
-    // Fallback: hold-to-record → Whisper
+    // Fallback: Whisper via API
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
@@ -337,16 +462,36 @@ export default function Home() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Cmd+Shift+K → Ask APAI
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setAskOpen((o) => !o)
+        setAskQuery('')
+        setAskResult(null)
+        return
+      }
+      // Cmd+K → Command palette
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setCmdOpen((o) => !o)
         setCmdQuery('')
         setCmdResults([])
+        return
       }
-      if (e.key === 'Escape') setCmdOpen(false)
-      if (e.key === '/' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
+      if (e.key === 'Escape') {
+        setCmdOpen(false)
+        setAskOpen(false)
+        setSearchOpen(false)
+        setSearchQuery('')
+      }
+      // / → inline search
+      if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'TEXTAREA' &&
+        document.activeElement?.tagName !== 'INPUT'
+      ) {
         e.preventDefault()
-        textareaRef.current?.focus()
+        setSearchOpen(true)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -358,11 +503,66 @@ export default function Home() {
   }, [cmdOpen])
 
   useEffect(() => {
+    if (searchOpen) setTimeout(() => searchInputRef.current?.focus(), 50)
+  }, [searchOpen])
+
+  useEffect(() => {
+    if (askOpen) setTimeout(() => askInputRef.current?.focus(), 50)
+  }, [askOpen])
+
+  useEffect(() => {
     searchItems(cmdQuery)
   }, [cmdQuery, searchItems])
 
-  const top3 = items.filter((i) => i.ai_priority >= 4).slice(0, 3)
-  const rest = items.filter((i) => !top3.find((t) => t.id === i.id))
+  function handleSortClick(sort: string) {
+    if (activeSort === sort) setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+    else {
+      setActiveSort(sort)
+      setSortDir('desc')
+    }
+  }
+
+  const filteredItems = useMemo(() => {
+    let result = items
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(
+        (i) =>
+          i.raw_input.toLowerCase().includes(q) || i.ai_summary?.toLowerCase().includes(q)
+      )
+    }
+
+    if (activeFilter === 'task') result = result.filter((i) => i.ai_type === 'task')
+    else if (activeFilter === 'reminder') result = result.filter((i) => i.ai_type === 'reminder')
+    else if (activeFilter === 'idea') result = result.filter((i) => i.ai_type === 'idea')
+    else if (activeFilter === 'med-dato') result = result.filter((i) => i.due_at)
+    else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4)
+
+    result = [...result].sort((a, b) => {
+      if (activeSort === 'prioritet') {
+        const diff = b.ai_priority - a.ai_priority
+        return sortDir === 'desc' ? diff : -diff
+      } else if (activeSort === 'dato') {
+        const inf = sortDir === 'asc' ? Infinity : -Infinity
+        const aDate = a.due_at ? new Date(a.due_at).getTime() : inf
+        const bDate = b.due_at ? new Date(b.due_at).getTime() : inf
+        return sortDir === 'asc' ? aDate - bDate : bDate - aDate
+      } else {
+        const diff =
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return sortDir === 'desc' ? diff : -diff
+      }
+    })
+
+    return result
+  }, [items, activeFilter, activeSort, sortDir, searchQuery])
+
+  const isFiltered =
+    activeFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
+
+  const top3 = filteredItems.filter((i) => i.ai_priority >= 4).slice(0, 3)
+  const rest = filteredItems.filter((i) => !top3.find((t) => t.id === i.id))
 
   return (
     <main className="apai-root">
@@ -370,16 +570,32 @@ export default function Home() {
         <span className="apai-logo">APAI</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span className="apai-count">{items.length} i indbakken</span>
-          <Link href="/settings" style={{ color: '#333', textDecoration: 'none', fontSize: 16 }} title="Indstillinger">⚙</Link>
+          <Link
+            href="/settings"
+            style={{ color: '#555', textDecoration: 'none', display: 'flex', alignItems: 'center' }}
+            title="Indstillinger"
+          >
+            <Settings size={16} />
+          </Link>
         </div>
       </header>
 
       {/* Brief */}
       <section className="brief-section">
         <div className="brief-btns">
-          {[['morning','🌅','Morgen'],['midday','☀️','Middag'],['afternoon','🕓','Eftermiddag'],['shutdown','🌙','Shutdown']].map(([t,icon,label]) => (
-            <button key={t} className={`brief-btn ${briefType === t ? 'active' : ''}`} onClick={() => generateBrief(t)} disabled={briefLoading}>
-              {icon} {label}
+          {[
+            ['morning', 'Morgen'],
+            ['midday', 'Middag'],
+            ['afternoon', 'Eftermiddag'],
+            ['shutdown', 'Shutdown'],
+          ].map(([t, label]) => (
+            <button
+              key={t}
+              className={`brief-btn ${briefType === t ? 'active' : ''}`}
+              onClick={() => generateBrief(t)}
+              disabled={briefLoading}
+            >
+              {label}
             </button>
           ))}
         </div>
@@ -389,7 +605,24 @@ export default function Home() {
               {briefText}
               {briefLoading && <span className="brief-cursor">▌</span>}
             </p>
-            {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
+            <div className="brief-footer">
+              {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
+              {briefText && !briefLoading && (
+                <button className="speak-btn" onClick={toggleSpeak}>
+                  {speaking ? (
+                    <>
+                      <VolumeX size={13} />
+                      <span>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 size={13} />
+                      <span>Oplæs</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
           </div>
         )}
         {!briefText && !briefLoading && (
@@ -415,15 +648,13 @@ export default function Home() {
             onPointerDown={handleMicPress}
             aria-label={recording ? 'Stop optagelse' : 'Optag tale'}
           >
-            {recording ? '⏹' : '🎙'}
+            {recording ? <Square size={16} /> : <Mic size={16} />}
           </button>
         </div>
         {(recording || interimText) && (
           <div className="listening-bar">
             <span className="listening-dot" />
-            <span className="listening-text">
-              {interimText || 'Lytter…'}
-            </span>
+            <span className="listening-text">{interimText || 'Lytter…'}</span>
           </div>
         )}
         <div className="capture-footer">
@@ -438,33 +669,118 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Top 3 */}
-      {top3.length > 0 && (
+      {/* Filter + Sort + Search */}
+      <div className="filter-row">
+        <div className="filter-labels">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              className={`filter-label ${activeFilter === f.id ? 'active' : ''}`}
+              onClick={() => setActiveFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="sort-row">
+          {SORTS.map((s) => (
+            <button
+              key={s.id}
+              className={`sort-btn ${activeSort === s.id ? 'active' : ''}`}
+              onClick={() => handleSortClick(s.id)}
+            >
+              {s.label}
+              {activeSort === s.id && (
+                <span className="sort-dir">{sortDir === 'desc' ? '↓' : '↑'}</span>
+              )}
+            </button>
+          ))}
+          <button
+            className="search-toggle"
+            onClick={() => {
+              setSearchOpen((o) => !o)
+              if (searchOpen) setSearchQuery('')
+            }}
+            aria-label="Søg"
+          >
+            {searchOpen ? <X size={13} /> : <Search size={13} />}
+          </button>
+        </div>
+      </div>
+
+      {searchOpen && (
+        <div className="search-bar">
+          <Search size={13} style={{ color: '#555', flexShrink: 0 }} />
+          <input
+            ref={searchInputRef}
+            className="search-input"
+            placeholder="Søg i indbakken…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setSearchOpen(false)
+                setSearchQuery('')
+              }
+            }}
+          />
+          {searchQuery && (
+            <button className="search-clear" onClick={() => setSearchQuery('')}>
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Top 3 — kun ved default visning */}
+      {!isFiltered && top3.length > 0 && (
         <section className="priority-section">
           <h2 className="section-label">Vigtigst nu</h2>
           <div className="item-list">
             {top3.map((item) => (
-              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToBacklog} />
+              <ItemCard
+                key={item.id}
+                item={item}
+                onDone={markDone}
+                onArchive={archive}
+                onBacklog={moveToBacklog}
+              />
             ))}
           </div>
         </section>
       )}
 
-      {/* Resten */}
-      {rest.length > 0 && (
+      {/* Resten / filtreret liste */}
+      {(isFiltered ? filteredItems : rest).length > 0 && (
         <section className="inbox-section">
-          <h2 className="section-label">Indbakke</h2>
+          {isFiltered ? (
+            <h2 className="section-label">
+              {searchQuery.trim()
+                ? `"${searchQuery}" · ${filteredItems.length}`
+                : `${FILTERS.find((f) => f.id === activeFilter)?.label ?? 'Indbakke'} · ${filteredItems.length}`}
+            </h2>
+          ) : (
+            <h2 className="section-label">Indbakke</h2>
+          )}
           <div className="item-list">
-            {rest.map((item) => (
-              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToBacklog} />
+            {(isFiltered ? filteredItems : rest).map((item) => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                onDone={markDone}
+                onArchive={archive}
+                onBacklog={moveToBacklog}
+              />
             ))}
           </div>
         </section>
       )}
 
-      {!loading && items.length === 0 && (
+      {!loading && filteredItems.length === 0 && (
         <div className="empty-state">
-          Alt er styr.<br />Dump din næste tanke herover.
+          {isFiltered
+            ? 'Ingen items matcher filteret.'
+            : 'Alt er styr.\nDump din næste tanke herover.'}
         </div>
       )}
 
@@ -473,12 +789,21 @@ export default function Home() {
         <section className="backlog-section">
           <button className="backlog-toggle" onClick={() => setBacklogOpen((o) => !o)}>
             <span>Backlog</span>
-            <span className="backlog-count">{backlogItems.length} {backlogOpen ? '▲' : '▼'}</span>
+            <span className="backlog-count">
+              {backlogItems.length} {backlogOpen ? '▲' : '▼'}
+            </span>
           </button>
           {backlogOpen && (
             <div className="item-list" style={{ marginTop: 8 }}>
               {backlogItems.map((item) => (
-                <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToInbox} isBacklog />
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  onDone={markDone}
+                  onArchive={archive}
+                  onBacklog={moveToInbox}
+                  isBacklog
+                />
               ))}
             </div>
           )}
@@ -520,7 +845,14 @@ export default function Home() {
               {duplicate.existing.ai_summary || duplicate.existing.raw_input}
             </div>
             <div className="modal-actions">
-              <button className="modal-btn" onClick={() => { setDuplicate(null); setInput(duplicate.pending); setTimeout(() => handleSubmit(undefined, true), 0) }}>
+              <button
+                className="modal-btn"
+                onClick={() => {
+                  setDuplicate(null)
+                  setInput(duplicate.pending)
+                  setTimeout(() => handleSubmit(undefined, true), 0)
+                }}
+              >
                 Gem alligevel
               </button>
               <button className="modal-btn secondary" onClick={() => setDuplicate(null)}>
@@ -531,7 +863,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Command palette */}
+      {/* Command palette (Cmd+K) */}
       {cmdOpen && (
         <div className="modal-overlay" onClick={() => setCmdOpen(false)}>
           <div className="cmd-palette" onClick={(e) => e.stopPropagation()}>
@@ -549,10 +881,62 @@ export default function Home() {
               {cmdResults.map((item) => (
                 <div key={item.id} className="cmd-item">
                   <span className="cmd-item-summary">{item.ai_summary || item.raw_input}</span>
-                  <span className="cmd-item-meta">{item.ai_type} · prio {item.ai_priority}</span>
+                  <span className="cmd-item-meta">
+                    {item.ai_type} · prio {item.ai_priority}
+                  </span>
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ask APAI (Cmd+Shift+K) */}
+      {askOpen && (
+        <div className="modal-overlay" onClick={() => setAskOpen(false)}>
+          <div className="cmd-palette ask-palette" onClick={(e) => e.stopPropagation()}>
+            <div className="ask-header">
+              <span className="ask-label">Spørg APAI</span>
+              <span className="ask-hint">⌘⇧K</span>
+            </div>
+            <div className="ask-input-row">
+              <input
+                ref={askInputRef}
+                className="cmd-input ask-cmd-input"
+                placeholder="Hvad har jeg om camping? Er der noget til weekenden?"
+                value={askQuery}
+                onChange={(e) => setAskQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAsk()
+                }}
+              />
+              <button
+                className="ask-send-btn"
+                onClick={handleAsk}
+                disabled={!askQuery.trim() || askLoading}
+              >
+                {askLoading ? '…' : 'Spørg'}
+              </button>
+            </div>
+            {askResult && (
+              <div className="ask-result">
+                <p className="ask-answer">{askResult.answer}</p>
+                {askResult.items.length > 0 && (
+                  <div className="ask-items">
+                    {askResult.items.map((item) => (
+                      <div key={item.id} className="cmd-item">
+                        <span className="cmd-item-summary">
+                          {item.ai_summary || item.raw_input}
+                        </span>
+                        <span className="cmd-item-meta">
+                          {TYPE_LABELS[item.ai_type]} · prio {item.ai_priority}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -576,7 +960,7 @@ export default function Home() {
         .apai-header {
           display: flex;
           justify-content: space-between;
-          align-items: baseline;
+          align-items: center;
           margin-bottom: 32px;
         }
 
@@ -637,7 +1021,7 @@ export default function Home() {
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 16px;
+          color: #888;
           cursor: pointer;
           transition: all 0.15s;
           touch-action: manipulation;
@@ -645,11 +1029,13 @@ export default function Home() {
 
         .mic-btn:hover {
           border-color: #444;
+          color: #BBB;
         }
 
         .mic-btn.recording {
           border-color: #E8FF3C;
           background: #1A1E00;
+          color: #E8FF3C;
           animation: pulse 1s ease-in-out infinite;
         }
 
@@ -726,6 +1112,117 @@ export default function Home() {
           opacity: 0.3;
           cursor: not-allowed;
         }
+
+        /* Filter + sort bar */
+        .filter-row {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .filter-labels {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+        }
+
+        .filter-label {
+          background: none;
+          border: 1px solid #1E1E1E;
+          border-radius: 4px;
+          color: #555;
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          padding: 4px 8px;
+          cursor: pointer;
+          transition: all 0.1s;
+        }
+
+        .filter-label:hover { border-color: #333; color: #888; }
+        .filter-label.active { border-color: #E8FF3C; color: #E8FF3C; background: rgba(232,255,60,0.06); }
+
+        .sort-row {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .sort-btn {
+          background: none;
+          border: none;
+          color: #444;
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          padding: 2px 0;
+          cursor: pointer;
+          transition: color 0.1s;
+          display: flex;
+          align-items: center;
+          gap: 3px;
+        }
+
+        .sort-btn:hover { color: #888; }
+        .sort-btn.active { color: #AAA; }
+
+        .sort-dir { opacity: 0.7; }
+
+        .search-toggle {
+          background: none;
+          border: 1px solid #1E1E1E;
+          border-radius: 4px;
+          color: #555;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 26px;
+          height: 22px;
+          cursor: pointer;
+          margin-left: auto;
+          transition: all 0.1s;
+        }
+
+        .search-toggle:hover { border-color: #333; color: #888; }
+
+        /* Inline search bar */
+        .search-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          background: #141414;
+          border: 1px solid #2A2A2A;
+          border-radius: 6px;
+          padding: 8px 12px;
+          margin-bottom: 12px;
+        }
+
+        .search-input {
+          flex: 1;
+          background: none;
+          border: none;
+          color: #E8E8E8;
+          font-family: inherit;
+          font-size: 13px;
+          outline: none;
+        }
+
+        .search-input::placeholder { color: #333; }
+
+        .search-clear {
+          background: none;
+          border: none;
+          color: #444;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          padding: 0;
+          transition: color 0.1s;
+        }
+
+        .search-clear:hover { color: #888; }
 
         .section-label {
           font-size: 10px;
@@ -822,6 +1319,15 @@ export default function Home() {
           color: #666;
         }
 
+        .item-due {
+          font-size: 10px;
+          color: #E8FF3C;
+          letter-spacing: 0.04em;
+          border: 1px solid rgba(232,255,60,0.25);
+          border-radius: 3px;
+          padding: 1px 5px;
+        }
+
         .item-priority {
           font-size: 10px;
           color: #444;
@@ -864,61 +1370,7 @@ export default function Home() {
           font-size: 14px;
           line-height: 2;
           margin-top: 80px;
-        }
-
-        .context-banner {
-          margin-bottom: 24px;
-          border: 1px solid #2A2A2A;
-          border-radius: 8px;
-          overflow: hidden;
-        }
-
-        .context-banner-header {
-          width: 100%;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 10px 14px;
-          background: #141414;
-          border: none;
-          color: #E8E8E8;
-          font-family: inherit;
-          font-size: 13px;
-          cursor: pointer;
-          text-align: left;
-        }
-
-        .context-banner-header:hover { background: #1A1A1A; }
-
-        .context-banner-count {
-          font-size: 11px;
-          color: #555;
-          letter-spacing: 0.05em;
-        }
-
-        .context-banner-items {
-          border-top: 1px solid #1E1E1E;
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
-        }
-
-        .context-item {
-          padding: 10px 14px;
-          background: #0E0E0E;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .context-item-summary {
-          font-size: 13px;
-          color: #C0C0C0;
-        }
-
-        .context-item-ctx {
-          font-size: 11px;
-          color: #444;
+          white-space: pre-line;
         }
 
         .context-picker {
@@ -934,14 +1386,17 @@ export default function Home() {
           background: none;
           border: 1px solid #222;
           border-radius: 6px;
-          padding: 8px 14px;
-          font-size: 18px;
+          padding: 6px 14px;
+          font-size: 11px;
+          letter-spacing: 0.05em;
+          color: #555;
+          font-family: inherit;
           cursor: pointer;
           transition: all 0.15s;
         }
 
-        .context-pick-btn:hover { border-color: #444; }
-        .context-pick-btn.active { border-color: #E8FF3C; background: #1A1E00; }
+        .context-pick-btn:hover { border-color: #444; color: #888; }
+        .context-pick-btn.active { border-color: #E8FF3C; background: #1A1E00; color: #E8FF3C; }
 
         .reclassify-row {
           display: flex;
@@ -1000,6 +1455,7 @@ export default function Home() {
           letter-spacing: 0.05em;
         }
 
+        /* Brief section */
         .brief-section {
           margin-bottom: 32px;
         }
@@ -1047,13 +1503,37 @@ export default function Home() {
           color: #E8FF3C;
         }
 
+        .brief-footer {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-top: 10px;
+          gap: 8px;
+        }
+
         .brief-timestamp {
-          display: block;
           font-size: 10px;
           color: #333;
-          margin-top: 10px;
           letter-spacing: 0.05em;
         }
+
+        .speak-btn {
+          background: none;
+          border: 1px solid #2A2A2A;
+          border-radius: 4px;
+          color: #555;
+          font-family: inherit;
+          font-size: 11px;
+          padding: 4px 8px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          transition: all 0.1s;
+          flex-shrink: 0;
+        }
+
+        .speak-btn:hover { border-color: #444; color: #888; }
 
         .brief-empty {
           font-size: 12px;
@@ -1061,6 +1541,7 @@ export default function Home() {
           letter-spacing: 0.02em;
         }
 
+        /* Toast */
         .toast {
           position: fixed;
           bottom: 32px;
@@ -1076,6 +1557,7 @@ export default function Home() {
           white-space: nowrap;
         }
 
+        /* Modals */
         .modal-overlay {
           position: fixed;
           inset: 0;
@@ -1137,6 +1619,7 @@ export default function Home() {
           color: #555;
         }
 
+        /* Command palette */
         .cmd-palette {
           background: #141414;
           border: 1px solid #2A2A2A;
@@ -1145,6 +1628,70 @@ export default function Home() {
           max-width: 520px;
           overflow: hidden;
         }
+
+        .ask-palette { max-width: 580px; }
+
+        .ask-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px 20px 0;
+        }
+
+        .ask-label {
+          font-size: 10px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          color: #E8FF3C;
+        }
+
+        .ask-hint {
+          font-size: 10px;
+          color: #333;
+          letter-spacing: 0.05em;
+        }
+
+        .ask-input-row {
+          display: flex;
+          align-items: stretch;
+        }
+
+        .ask-cmd-input {
+          border-bottom: 1px solid #1E1E1E !important;
+        }
+
+        .ask-send-btn {
+          background: #E8FF3C;
+          border: none;
+          border-bottom: 1px solid #1E1E1E;
+          color: #0E0E0E;
+          font-family: inherit;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 0 16px;
+          cursor: pointer;
+          transition: opacity 0.1s;
+          white-space: nowrap;
+          flex-shrink: 0;
+        }
+
+        .ask-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .ask-result {
+          padding: 16px 20px;
+          border-top: 1px solid #1A1A1A;
+          max-height: 320px;
+          overflow-y: auto;
+        }
+
+        .ask-answer {
+          font-size: 14px;
+          line-height: 1.7;
+          color: #C0C0C0;
+          margin-bottom: 12px;
+        }
+
+        .ask-items { display: flex; flex-direction: column; }
 
         .cmd-input {
           width: 100%;
@@ -1207,7 +1754,6 @@ export default function Home() {
           .mic-btn {
             width: 56px;
             height: 56px;
-            font-size: 24px;
             bottom: 10px;
             right: 10px;
           }
@@ -1222,6 +1768,9 @@ export default function Home() {
           .capture-hint { display: none; }
 
           .item-actions { display: none; }
+
+          .filter-labels { gap: 4px; }
+          .filter-label { font-size: 9px; padding: 3px 6px; }
         }
       `}</style>
     </main>
@@ -1291,17 +1840,20 @@ function ItemCard({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>Færdig</span>
-      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>Arkiver</span>
+      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>
+        Færdig
+      </span>
+      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>
+        Arkiver
+      </span>
       <div>
         <div className="item-summary">{item.ai_summary || item.raw_input}</div>
         <div className="item-meta">
           <span className="item-type" style={{ background: color + '20', color }}>
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
-          {item.ai_context && (
-            <span className="item-context">↳ {item.ai_context}</span>
-          )}
+          {item.ai_context && <span className="item-context">↳ {item.ai_context}</span>}
+          {item.due_at && <span className="item-due">{formatDueAt(item.due_at)}</span>}
           <span className="item-priority">{PRIORITY_DOT(item.ai_priority)}</span>
         </div>
         {item.ai_summary && item.ai_summary !== item.raw_input && (
@@ -1310,14 +1862,22 @@ function ItemCard({
       </div>
       {!isTemp && (
         <div className="item-actions">
-          <button className="action-btn done" onClick={() => onDone(item.id)}>Færdig</button>
+          <button className="action-btn done" onClick={() => onDone(item.id)}>
+            Færdig
+          </button>
           {!isBacklog && onBacklog && (
-            <button className="action-btn" onClick={() => onBacklog(item.id)}>Backlog</button>
+            <button className="action-btn" onClick={() => onBacklog(item.id)}>
+              Backlog
+            </button>
           )}
           {isBacklog && (
-            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>→ Indbakke</button>
+            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>
+              → Indbakke
+            </button>
           )}
-          <button className="action-btn" onClick={() => onArchive(item.id)}>Arkiver</button>
+          <button className="action-btn" onClick={() => onArchive(item.id)}>
+            Arkiver
+          </button>
         </div>
       )}
     </div>

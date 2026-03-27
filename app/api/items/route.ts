@@ -67,21 +67,27 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const { data, error } = await supabase
+  const baseInsert = {
+    raw_input: raw_input.trim(),
+    ai_type: classification.type,
+    ai_summary: classification.summary,
+    ai_context: classification.context,
+    ai_priority: classification.priority,
+    context_trigger: classification.context_trigger,
+    status: 'inbox',
+  }
+
+  // Forsøg med due_at — falder tilbage uden hvis kolonnen ikke eksisterer endnu
+  let result = await supabase
     .from('items')
-    .insert({
-      raw_input: raw_input.trim(),
-      ai_type: classification.type,
-      ai_summary: classification.summary,
-      ai_context: classification.context,
-      ai_priority: classification.priority,
-      context_trigger: classification.context_trigger,
-      due_at: classification.due_at,
-      status: 'inbox',
-    })
+    .insert({ ...baseInsert, due_at: classification.due_at })
     .select()
     .single()
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  return NextResponse.json(data, { status: 201 })
+  if (result.error?.message?.includes('due_at')) {
+    result = await supabase.from('items').insert(baseInsert).select().single()
+  }
+
+  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 })
+  return NextResponse.json(result.data, { status: 201 })
 }

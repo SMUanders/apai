@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabaseAdmin as supabase } from '@/lib/supabase-server'
+import { supabase } from '@/lib/supabase'
 import { classifyInput } from '@/lib/classify'
 
 // GET /api/items — hent alle inbox-items, sorteret efter prioritet
@@ -63,6 +63,7 @@ export async function POST(req: NextRequest) {
       context: null,
       context_trigger: null,
       priority: 3,
+      due_at: null,
     }
   }
 
@@ -72,47 +73,21 @@ export async function POST(req: NextRequest) {
     ai_summary: classification.summary,
     ai_context: classification.context,
     ai_priority: classification.priority,
+    context_trigger: classification.context_trigger,
     status: 'inbox',
   }
 
-  const firstAttempt = await supabase
+  // Forsøg med due_at — falder tilbage uden hvis kolonnen ikke eksisterer endnu
+  let result = await supabase
     .from('items')
-    .insert({
-      ...baseInsert,
-      context_trigger: classification.context_trigger,
-    })
+    .insert({ ...baseInsert, due_at: classification.due_at })
     .select()
     .single()
 
-  if (!firstAttempt.error) return NextResponse.json(firstAttempt.data, { status: 201 })
-
-  // Compatibility fallback for older DB schema without context_trigger column.
-  const missingContextTriggerColumn =
-    firstAttempt.error.code === '42703' &&
-    firstAttempt.error.message.toLowerCase().includes('context_trigger')
-
-  if (missingContextTriggerColumn) {
-    const fallbackAttempt = await supabase.from('items').insert(baseInsert).select().single()
-    if (!fallbackAttempt.error) return NextResponse.json(fallbackAttempt.data, { status: 201 })
-    const isRlsError = fallbackAttempt.error.message
-      .toLowerCase()
-      .includes('row-level security policy')
-    if (isRlsError) {
-      return NextResponse.json(
-        { error: 'Database policy blocks insert (RLS). Add an INSERT policy for table items.' },
-        { status: 403 }
-      )
-    }
-    return NextResponse.json({ error: fallbackAttempt.error.message }, { status: 500 })
+  if (result.error?.message?.includes('due_at')) {
+    result = await supabase.from('items').insert(baseInsert).select().single()
   }
 
-  const isRlsError = firstAttempt.error.message.toLowerCase().includes('row-level security policy')
-  if (isRlsError) {
-    return NextResponse.json(
-      { error: 'Database policy blocks insert (RLS). Add an INSERT policy for table items.' },
-      { status: 403 }
-    )
-  }
-
-  return NextResponse.json({ error: firstAttempt.error.message }, { status: 500 })
+  if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 })
+  return NextResponse.json(result.data, { status: 201 })
 }

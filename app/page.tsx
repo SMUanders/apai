@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { Mic, Square, Settings, Search, X, Volume2, VolumeX } from 'lucide-react'
 import { Item } from '@/lib/supabase'
 import {
   ContextTrigger,
@@ -24,11 +25,11 @@ const TYPE_LABELS: Record<string, string> = {
 
 const TYPE_COLORS: Record<string, string> = {
   task: '#E8FF3C',
-  note: '#C8C8C8',
+  note: '#B8B8B8',
   idea: '#FF9B3C',
   reminder: '#3CDFFF',
   someday: '#C4B5FD',
-  none: '#666666',
+  none: '#555555',
 }
 
 const PRIORITY_DOT = (p: number) => {
@@ -37,6 +38,42 @@ const PRIORITY_DOT = (p: number) => {
   if (p >= 3) return '●○○'
   return '○○○'
 }
+
+function formatDueAt(due_at: string): string {
+  const due = new Date(due_at)
+  const now = new Date()
+  const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
+  const diffDays = Math.round((dueDay.getTime() - nowDay.getTime()) / 86400000)
+  const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0
+  const timeStr = hasTime
+    ? ' ' + due.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+    : ''
+
+  if (diffDays === 0) return `I dag${timeStr}`
+  if (diffDays === 1) return `I morgen${timeStr}`
+  if (diffDays === -1) return `I går${timeStr}`
+  if (diffDays > 1 && diffDays < 7) return `Om ${diffDays} dage${timeStr}`
+  if (diffDays < 0 && diffDays > -7) return `${Math.abs(diffDays)} dage siden`
+  return (
+    due.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' }) + timeStr
+  )
+}
+
+const FILTERS = [
+  { id: 'alle', label: 'Alle' },
+  { id: 'task', label: 'Opgaver' },
+  { id: 'reminder', label: 'Påmindelser' },
+  { id: 'idea', label: 'Idéer' },
+  { id: 'med-dato', label: 'Med dato' },
+  { id: 'hoj-prioritet', label: 'Høj prioritet' },
+]
+
+const SORTS = [
+  { id: 'prioritet', label: 'Prioritet' },
+  { id: 'dato', label: 'Dato' },
+  { id: 'oprettet', label: 'Oprettet' },
+]
 
 export default function Home() {
   const [items, setItems] = useState<Item[]>([])
@@ -61,8 +98,25 @@ export default function Home() {
   const [cmdOpen, setCmdOpen] = useState(false)
   const [cmdQuery, setCmdQuery] = useState('')
   const [cmdResults, setCmdResults] = useState<Item[]>([])
+  // Filter + sort
+  const [activeFilter, setActiveFilter] = useState('alle')
+  const [activeSort, setActiveSort] = useState('prioritet')
+  const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
+  // Inline search
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  // Ask APAI
+  const [askOpen, setAskOpen] = useState(false)
+  const [askQuery, setAskQuery] = useState('')
+  const [askLoading, setAskLoading] = useState(false)
+  const [askResult, setAskResult] = useState<{ answer: string; items: Item[] } | null>(null)
+  // Speech
+  const [speaking, setSpeaking] = useState(false)
+
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const cmdInputRef = useRef<HTMLInputElement>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const askInputRef = useRef<HTMLInputElement>(null)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const recognitionRef = useRef<{ stop: () => void } | null>(null)
@@ -89,7 +143,10 @@ export default function Home() {
 
   async function fetchContextItems(ctx: ContextTrigger) {
     const triggers = getRelevantTriggers(ctx)
-    if (ctx === 'anytime') { setContextItems([]); return }
+    if (ctx === 'anytime') {
+      setContextItems([])
+      return
+    }
     const res = await fetch(`/api/items/context?triggers=${triggers.join(',')}`)
     const data = await res.json()
     setContextItems(Array.isArray(data) ? data : [])
@@ -130,12 +187,17 @@ export default function Home() {
     setBriefText('')
     setBriefType(type)
     setBriefTime(null)
+    setSpeaking(false)
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel()
     const res = await fetch('/api/brief/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type }),
     })
-    if (!res.body) { setBriefLoading(false); return }
+    if (!res.body) {
+      setBriefLoading(false)
+      return
+    }
     const reader = res.body.getReader()
     const decoder = new TextDecoder()
     let text = ''
@@ -146,11 +208,34 @@ export default function Home() {
       setBriefText(text)
     }
     setBriefLoading(false)
-    setBriefTime(new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' }))
+    setBriefTime(
+      new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
+    )
+  }
+
+  function toggleSpeak() {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return
+    if (speaking) {
+      window.speechSynthesis.cancel()
+      setSpeaking(false)
+      return
+    }
+    const utterance = new SpeechSynthesisUtterance(briefText)
+    utterance.lang = 'da-DK'
+    const voices = window.speechSynthesis.getVoices()
+    const daVoice = voices.find((v) => v.lang.startsWith('da'))
+    if (daVoice) utterance.voice = daVoice
+    utterance.onend = () => setSpeaking(false)
+    utterance.onerror = () => setSpeaking(false)
+    window.speechSynthesis.speak(utterance)
+    setSpeaking(true)
   }
 
   const searchItems = useCallback(async (q: string) => {
-    if (!q.trim()) { setCmdResults([]); return }
+    if (!q.trim()) {
+      setCmdResults([])
+      return
+    }
     const { supabase } = await import('@/lib/supabase')
     const { data } = await supabase
       .from('items')
@@ -159,6 +244,24 @@ export default function Home() {
       .limit(8)
     setCmdResults(data ?? [])
   }, [])
+
+  async function handleAsk() {
+    if (!askQuery.trim() || askLoading) return
+    setAskLoading(true)
+    setAskResult(null)
+    try {
+      const res = await fetch('/api/ask', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: askQuery, items }),
+      })
+      const data = await res.json()
+      setAskResult(data)
+    } catch {
+      setAskResult({ answer: 'Noget gik galt — prøv igen.', items: [] })
+    }
+    setAskLoading(false)
+  }
 
   async function handleSubmit(e?: React.FormEvent, force = false) {
     e?.preventDefault()
@@ -175,6 +278,7 @@ export default function Home() {
       ai_context: null,
       ai_priority: 3,
       context_trigger: null,
+      due_at: null,
       status: 'inbox',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -266,9 +370,24 @@ export default function Home() {
   }
 
   async function startRecording() {
-    type SREvent = { resultIndex: number; results: { isFinal: boolean; 0: { transcript: string } }[] }
-    type SR = { start: () => void; stop: () => void; lang: string; continuous: boolean; interimResults: boolean; onresult: ((e: SREvent) => void) | null; onerror: (() => void) | null; onend: (() => void) | null }
-    const w = window as Window & { SpeechRecognition?: new () => SR; webkitSpeechRecognition?: new () => SR }
+    type SREvent = {
+      resultIndex: number
+      results: { isFinal: boolean; 0: { transcript: string } }[]
+    }
+    type SR = {
+      start: () => void
+      stop: () => void
+      lang: string
+      continuous: boolean
+      interimResults: boolean
+      onresult: ((e: SREvent) => void) | null
+      onerror: (() => void) | null
+      onend: (() => void) | null
+    }
+    const w = window as Window & {
+      SpeechRecognition?: new () => SR
+      webkitSpeechRecognition?: new () => SR
+    }
     const SpeechRecognitionCtor = w.SpeechRecognition || w.webkitSpeechRecognition
 
     if (SpeechRecognitionCtor) {
@@ -293,12 +412,19 @@ export default function Home() {
           setInterimText('')
         }
       }
-      recognition.onerror = () => { setRecording(false); setInterimText('') }
-      recognition.onend = () => { setRecording(false); setInterimText('') }
+      recognition.onerror = () => {
+        setRecording(false)
+        setInterimText('')
+      }
+      recognition.onend = () => {
+        setRecording(false)
+        setInterimText('')
+      }
       recognition.start()
       return
     }
 
+    // Fallback: Whisper via API
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
@@ -336,16 +462,36 @@ export default function Home() {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      // Cmd+Shift+K → Ask APAI
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setAskOpen((o) => !o)
+        setAskQuery('')
+        setAskResult(null)
+        return
+      }
+      // Cmd+K → Command palette
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
         e.preventDefault()
         setCmdOpen((o) => !o)
         setCmdQuery('')
         setCmdResults([])
+        return
       }
-      if (e.key === 'Escape') setCmdOpen(false)
-      if (e.key === '/' && document.activeElement?.tagName !== 'TEXTAREA' && document.activeElement?.tagName !== 'INPUT') {
+      if (e.key === 'Escape') {
+        setCmdOpen(false)
+        setAskOpen(false)
+        setSearchOpen(false)
+        setSearchQuery('')
+      }
+      // / → inline search
+      if (
+        e.key === '/' &&
+        document.activeElement?.tagName !== 'TEXTAREA' &&
+        document.activeElement?.tagName !== 'INPUT'
+      ) {
         e.preventDefault()
-        textareaRef.current?.focus()
+        setSearchOpen(true)
       }
     }
     window.addEventListener('keydown', onKey)
@@ -357,20 +503,80 @@ export default function Home() {
   }, [cmdOpen])
 
   useEffect(() => {
+    if (searchOpen) setTimeout(() => searchInputRef.current?.focus(), 50)
+  }, [searchOpen])
+
+  useEffect(() => {
+    if (askOpen) setTimeout(() => askInputRef.current?.focus(), 50)
+  }, [askOpen])
+
+  useEffect(() => {
     searchItems(cmdQuery)
   }, [cmdQuery, searchItems])
 
-  const top3 = items.filter((i) => i.ai_priority >= 4).slice(0, 3)
-  const rest = items.filter((i) => !top3.find((t) => t.id === i.id))
+  function handleSortClick(sort: string) {
+    if (activeSort === sort) setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+    else {
+      setActiveSort(sort)
+      setSortDir('desc')
+    }
+  }
+
+  const filteredItems = useMemo(() => {
+    let result = items
+
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase()
+      result = result.filter(
+        (i) =>
+          i.raw_input.toLowerCase().includes(q) || i.ai_summary?.toLowerCase().includes(q)
+      )
+    }
+
+    if (activeFilter === 'task') result = result.filter((i) => i.ai_type === 'task')
+    else if (activeFilter === 'reminder') result = result.filter((i) => i.ai_type === 'reminder')
+    else if (activeFilter === 'idea') result = result.filter((i) => i.ai_type === 'idea')
+    else if (activeFilter === 'med-dato') result = result.filter((i) => i.due_at)
+    else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4)
+
+    result = [...result].sort((a, b) => {
+      if (activeSort === 'prioritet') {
+        const diff = b.ai_priority - a.ai_priority
+        return sortDir === 'desc' ? diff : -diff
+      } else if (activeSort === 'dato') {
+        const inf = sortDir === 'asc' ? Infinity : -Infinity
+        const aDate = a.due_at ? new Date(a.due_at).getTime() : inf
+        const bDate = b.due_at ? new Date(b.due_at).getTime() : inf
+        return sortDir === 'asc' ? aDate - bDate : bDate - aDate
+      } else {
+        const diff =
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        return sortDir === 'desc' ? diff : -diff
+      }
+    })
+
+    return result
+  }, [items, activeFilter, activeSort, sortDir, searchQuery])
+
+  const isFiltered =
+    activeFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
+
+  const top3 = filteredItems.filter((i) => i.ai_priority >= 4).slice(0, 3)
+  const rest = filteredItems.filter((i) => !top3.find((t) => t.id === i.id))
 
   return (
     <main className="apai-root">
-      {/* Header */}
       <header className="apai-header">
         <span className="apai-logo">APAI</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span className="apai-count">{items.length} i indbakken</span>
-          <Link href="/settings" className="header-settings-link" title="Indstillinger">⚙</Link>
+          <Link
+            href="/settings"
+            style={{ color: '#555', textDecoration: 'none', display: 'flex', alignItems: 'center' }}
+            title="Indstillinger"
+          >
+            <Settings size={16} />
+          </Link>
         </div>
       </header>
 
@@ -392,19 +598,17 @@ export default function Home() {
             onPointerDown={handleMicPress}
             aria-label={recording ? 'Stop optagelse' : 'Optag tale'}
           >
-            {recording ? '⏹' : '🎙'}
+            {recording ? <Square size={16} /> : <Mic size={16} />}
           </button>
         </div>
         {(recording || interimText) && (
           <div className="listening-bar">
             <span className="listening-dot" />
-            <span className="listening-text">
-              {interimText || 'Lytter…'}
-            </span>
+            <span className="listening-text">{interimText || 'Lytter…'}</span>
           </div>
         )}
         <div className="capture-footer">
-          <span className="capture-hint">⌘↵ sender</span>
+          <span className="capture-hint">⌘↵ for at sende</span>
           <button
             className="capture-btn"
             onClick={() => handleSubmit()}
@@ -415,33 +619,118 @@ export default function Home() {
         </div>
       </section>
 
-      {/* Top 3 */}
-      {top3.length > 0 && (
+      {/* Filter + Sort + Search */}
+      <div className="filter-row">
+        <div className="filter-labels">
+          {FILTERS.map((f) => (
+            <button
+              key={f.id}
+              className={`filter-label ${activeFilter === f.id ? 'active' : ''}`}
+              onClick={() => setActiveFilter(f.id)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="sort-row">
+          {SORTS.map((s) => (
+            <button
+              key={s.id}
+              className={`sort-btn ${activeSort === s.id ? 'active' : ''}`}
+              onClick={() => handleSortClick(s.id)}
+            >
+              {s.label}
+              {activeSort === s.id && (
+                <span className="sort-dir">{sortDir === 'desc' ? '↓' : '↑'}</span>
+              )}
+            </button>
+          ))}
+          <button
+            className="search-toggle"
+            onClick={() => {
+              setSearchOpen((o) => !o)
+              if (searchOpen) setSearchQuery('')
+            }}
+            aria-label="Søg"
+          >
+            {searchOpen ? <X size={13} /> : <Search size={13} />}
+          </button>
+        </div>
+      </div>
+
+      {searchOpen && (
+        <div className="search-bar">
+          <Search size={13} style={{ color: '#555', flexShrink: 0 }} />
+          <input
+            ref={searchInputRef}
+            className="search-input"
+            placeholder="Søg i indbakken…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                setSearchOpen(false)
+                setSearchQuery('')
+              }
+            }}
+          />
+          {searchQuery && (
+            <button className="search-clear" onClick={() => setSearchQuery('')}>
+              <X size={12} />
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Top 3 — kun ved default visning */}
+      {!isFiltered && top3.length > 0 && (
         <section className="priority-section">
           <h2 className="section-label">Vigtigst nu</h2>
           <div className="item-list">
             {top3.map((item) => (
-              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToBacklog} />
+              <ItemCard
+                key={item.id}
+                item={item}
+                onDone={markDone}
+                onArchive={archive}
+                onBacklog={moveToBacklog}
+              />
             ))}
           </div>
         </section>
       )}
 
-      {/* Resten */}
-      {rest.length > 0 && (
+      {/* Resten / filtreret liste */}
+      {(isFiltered ? filteredItems : rest).length > 0 && (
         <section className="inbox-section">
-          <h2 className="section-label">Indbakke</h2>
+          {isFiltered ? (
+            <h2 className="section-label">
+              {searchQuery.trim()
+                ? `"${searchQuery}" · ${filteredItems.length}`
+                : `${FILTERS.find((f) => f.id === activeFilter)?.label ?? 'Indbakke'} · ${filteredItems.length}`}
+            </h2>
+          ) : (
+            <h2 className="section-label">Indbakke</h2>
+          )}
           <div className="item-list">
-            {rest.map((item) => (
-              <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToBacklog} />
+            {(isFiltered ? filteredItems : rest).map((item) => (
+              <ItemCard
+                key={item.id}
+                item={item}
+                onDone={markDone}
+                onArchive={archive}
+                onBacklog={moveToBacklog}
+              />
             ))}
           </div>
         </section>
       )}
 
-      {!loading && items.length === 0 && (
+      {!loading && filteredItems.length === 0 && (
         <div className="empty-state">
-          Alt er styr.<br />Dump din næste tanke herover.
+          {isFiltered
+            ? 'Ingen items matcher filteret.'
+            : 'Alt er styr.\nDump din næste tanke herover.'}
         </div>
       )}
 
@@ -450,47 +739,34 @@ export default function Home() {
         <section className="backlog-section">
           <button className="backlog-toggle" onClick={() => setBacklogOpen((o) => !o)}>
             <span>Backlog</span>
-            <span className="backlog-count">{backlogItems.length} {backlogOpen ? '▲' : '▼'}</span>
+            <span className="backlog-count">
+              {backlogItems.length} {backlogOpen ? '▲' : '▼'}
+            </span>
           </button>
           {backlogOpen && (
             <div className="item-list" style={{ marginTop: 8 }}>
               {backlogItems.map((item) => (
-                <ItemCard key={item.id} item={item} onDone={markDone} onArchive={archive} onBacklog={moveToInbox} isBacklog />
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  onDone={markDone}
+                  onArchive={archive}
+                  onBacklog={moveToInbox}
+                  isBacklog
+                />
               ))}
             </div>
           )}
         </section>
       )}
 
-      {/* Brief */}
-      <section className="brief-section">
-        <h2 className="section-label" style={{ marginBottom: 10 }}>Daglig brief</h2>
-        <div className="brief-btns">
-          {[['morning','🌅','Morgen'],['midday','☀️','Middag'],['afternoon','🕓','Eftermiddag'],['shutdown','🌙','Shutdown']].map(([t,icon,label]) => (
-            <button key={t} className={`brief-btn ${briefType === t ? 'active' : ''}`} onClick={() => generateBrief(t)} disabled={briefLoading}>
-              {icon} {label}
-            </button>
-          ))}
-        </div>
-        {(briefLoading || briefText) && (
-          <div className="brief-box">
-            <p className="brief-text">
-              {briefText}
-              {briefLoading && <span className="brief-cursor">▌</span>}
-            </p>
-            {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
-          </div>
-        )}
-      </section>
-
-      {/* Kontekst-vælger (desktop only — mobile via bottom dock) */}
+      {/* Kontekst-vælger */}
       <div className="context-picker">
         {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
           <button
             key={ctx}
             className={`context-pick-btn ${currentContext === ctx ? 'active' : ''}`}
             onClick={() => handleContextSelect(ctx)}
-            title={CONTEXT_META[ctx].label ?? ctx}
           >
             {CONTEXT_META[ctx].icon}
           </button>
@@ -507,6 +783,75 @@ export default function Home() {
         )}
       </div>
 
+      {/* Brief */}
+      <section className="brief-section">
+        <div className="brief-btns">
+          {[
+            ['morning', 'Morgen'],
+            ['midday', 'Middag'],
+            ['afternoon', 'Eftermiddag'],
+            ['shutdown', 'Shutdown'],
+          ].map(([t, label]) => (
+            <button
+              key={t}
+              className={`brief-btn ${briefType === t ? 'active' : ''}`}
+              onClick={() => generateBrief(t)}
+              disabled={briefLoading}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {(briefLoading || briefText) && (
+          <div className="brief-box">
+            <p className="brief-text">
+              {briefText}
+              {briefLoading && <span className="brief-cursor">▌</span>}
+            </p>
+            <div className="brief-footer">
+              {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
+              {briefText && !briefLoading && (
+                <button className="speak-btn" onClick={toggleSpeak}>
+                  {speaking ? (
+                    <>
+                      <VolumeX size={13} />
+                      <span>Stop</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 size={13} />
+                      <span>Oplæs</span>
+                    </>
+                  )}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+        {!briefText && !briefLoading && (
+          <p className="brief-empty">Tryk en knap for en kort briefing.</p>
+        )}
+      </section>
+
+      {/* Bottom dock — mobile only */}
+      <nav className="bottom-dock">
+        <div className="dock-context">
+          {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
+            <button
+              key={ctx}
+              className={`dock-ctx-btn ${currentContext === ctx ? 'active' : ''}`}
+              onClick={() => handleContextSelect(ctx)}
+              aria-label={CONTEXT_META[ctx].label}
+            >
+              {CONTEXT_META[ctx].icon}
+            </button>
+          ))}
+        </div>
+        <Link href="/settings" className="dock-settings-btn" title="Indstillinger">
+          <Settings size={20} />
+        </Link>
+      </nav>
+
       {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
 
@@ -519,7 +864,14 @@ export default function Home() {
               {duplicate.existing.ai_summary || duplicate.existing.raw_input}
             </div>
             <div className="modal-actions">
-              <button className="modal-btn" onClick={() => { setDuplicate(null); setInput(duplicate.pending); setTimeout(() => handleSubmit(undefined, true), 0) }}>
+              <button
+                className="modal-btn"
+                onClick={() => {
+                  setDuplicate(null)
+                  setInput(duplicate.pending)
+                  setTimeout(() => handleSubmit(undefined, true), 0)
+                }}
+              >
                 Gem alligevel
               </button>
               <button className="modal-btn secondary" onClick={() => setDuplicate(null)}>
@@ -530,7 +882,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Command palette */}
+      {/* Command palette (Cmd+K) */}
       {cmdOpen && (
         <div className="modal-overlay" onClick={() => setCmdOpen(false)}>
           <div className="cmd-palette" onClick={(e) => e.stopPropagation()}>
@@ -548,7 +900,9 @@ export default function Home() {
               {cmdResults.map((item) => (
                 <div key={item.id} className="cmd-item">
                   <span className="cmd-item-summary">{item.ai_summary || item.raw_input}</span>
-                  <span className="cmd-item-meta">{item.ai_type} · prio {item.ai_priority}</span>
+                  <span className="cmd-item-meta">
+                    {item.ai_type} · prio {item.ai_priority}
+                  </span>
                 </div>
               ))}
             </div>
@@ -556,22 +910,55 @@ export default function Home() {
         </div>
       )}
 
-      {/* Bottom dock — mobile only */}
-      <nav className="bottom-dock">
-        <div className="dock-context">
-          {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
-            <button
-              key={ctx}
-              className={`dock-ctx-btn ${currentContext === ctx ? 'active' : ''}`}
-              onClick={() => handleContextSelect(ctx)}
-              aria-label={String(CONTEXT_META[ctx].label ?? ctx)}
-            >
-              {CONTEXT_META[ctx].icon}
-            </button>
-          ))}
+      {/* Ask APAI (Cmd+Shift+K) */}
+      {askOpen && (
+        <div className="modal-overlay" onClick={() => setAskOpen(false)}>
+          <div className="cmd-palette ask-palette" onClick={(e) => e.stopPropagation()}>
+            <div className="ask-header">
+              <span className="ask-label">Spørg APAI</span>
+              <span className="ask-hint">⌘⇧K</span>
+            </div>
+            <div className="ask-input-row">
+              <input
+                ref={askInputRef}
+                className="cmd-input ask-cmd-input"
+                placeholder="Hvad har jeg om camping? Er der noget til weekenden?"
+                value={askQuery}
+                onChange={(e) => setAskQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleAsk()
+                }}
+              />
+              <button
+                className="ask-send-btn"
+                onClick={handleAsk}
+                disabled={!askQuery.trim() || askLoading}
+              >
+                {askLoading ? '…' : 'Spørg'}
+              </button>
+            </div>
+            {askResult && (
+              <div className="ask-result">
+                <p className="ask-answer">{askResult.answer}</p>
+                {askResult.items.length > 0 && (
+                  <div className="ask-items">
+                    {askResult.items.map((item) => (
+                      <div key={item.id} className="cmd-item">
+                        <span className="cmd-item-summary">
+                          {item.ai_summary || item.raw_input}
+                        </span>
+                        <span className="cmd-item-meta">
+                          {TYPE_LABELS[item.ai_type]} · prio {item.ai_priority}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-        <Link href="/settings" className="dock-settings-btn" title="Indstillinger">⚙</Link>
-      </nav>
+      )}
 
       <style jsx global>{`
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -606,12 +993,11 @@ export default function Home() {
           padding: 24px 18px 160px;
         }
 
-        /* ─── Header ─── */
         .apai-header {
           display: flex;
           justify-content: space-between;
           align-items: center;
-          margin-bottom: 28px;
+          margin-bottom: 24px;
         }
 
         .apai-logo {
@@ -625,21 +1011,9 @@ export default function Home() {
         .apai-count {
           font-size: 12px;
           color: var(--text-3);
-          letter-spacing: 0.06em;
+          letter-spacing: 0.08em;
         }
 
-        .header-settings-link {
-          color: var(--text-3);
-          text-decoration: none;
-          font-size: 18px;
-          line-height: 1;
-          padding: 4px;
-          transition: color 0.15s;
-        }
-
-        .header-settings-link:hover { color: var(--text-2); }
-
-        /* ─── Capture ─── */
         .capture-section {
           margin-bottom: 40px;
         }
@@ -684,17 +1058,21 @@ export default function Home() {
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 20px;
+          color: var(--text-2);
           cursor: pointer;
           transition: all 0.15s;
           touch-action: manipulation;
         }
 
-        .mic-btn:hover { border-color: var(--border-2); }
+        .mic-btn:hover {
+          border-color: var(--border-2);
+          color: var(--text-1);
+        }
 
         .mic-btn.recording {
           border-color: var(--accent);
           background: var(--accent-bg);
+          color: var(--accent);
           animation: pulse 1.2s ease-in-out infinite;
         }
 
@@ -754,7 +1132,7 @@ export default function Home() {
 
         .capture-btn {
           background: var(--accent);
-          color: #080808;
+          color: var(--bg);
           border: none;
           border-radius: var(--radius-sm);
           padding: 12px 24px;
@@ -772,7 +1150,125 @@ export default function Home() {
           cursor: not-allowed;
         }
 
-        /* ─── Sections ─── */
+        /* Filter + sort bar */
+        .filter-row {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          margin-bottom: 16px;
+        }
+
+        .filter-labels {
+          display: flex;
+          gap: 6px;
+          overflow-x: auto;
+          flex-wrap: nowrap;
+          padding-bottom: 2px;
+          scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .filter-labels::-webkit-scrollbar { display: none; }
+
+        .filter-label {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          padding: 6px 12px;
+          cursor: pointer;
+          transition: all 0.1s;
+          white-space: nowrap;
+          flex-shrink: 0;
+          touch-action: manipulation;
+        }
+
+        .filter-label:hover { border-color: var(--border-2); color: var(--text-2); }
+        .filter-label.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+
+        .sort-row {
+          display: flex;
+          gap: 10px;
+          align-items: center;
+        }
+
+        .sort-btn {
+          background: none;
+          border: none;
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.08em;
+          padding: 2px 0;
+          cursor: pointer;
+          transition: color 0.1s;
+          display: flex;
+          align-items: center;
+          gap: 3px;
+        }
+
+        .sort-btn:hover { color: var(--text-2); }
+        .sort-btn.active { color: var(--text-2); }
+
+        .sort-dir { opacity: 0.7; }
+
+        .search-toggle {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          color: var(--text-3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 30px;
+          height: 26px;
+          cursor: pointer;
+          margin-left: auto;
+          transition: all 0.1s;
+        }
+
+        .search-toggle:hover { border-color: var(--border-2); color: var(--text-2); }
+
+        /* Inline search bar */
+        .search-bar {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          background: var(--surface);
+          border: 1.5px solid var(--border);
+          border-radius: var(--radius-sm);
+          padding: 10px 14px;
+          margin-bottom: 12px;
+        }
+
+        .search-input {
+          flex: 1;
+          background: none;
+          border: none;
+          color: var(--text-1);
+          font-family: inherit;
+          font-size: 14px;
+          outline: none;
+        }
+
+        .search-input::placeholder { color: var(--text-3); }
+
+        .search-clear {
+          background: none;
+          border: none;
+          color: var(--text-3);
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          padding: 0;
+          transition: color 0.1s;
+        }
+
+        .search-clear:hover { color: var(--text-2); }
+
         .section-label {
           font-size: 10px;
           letter-spacing: 0.3em;
@@ -791,7 +1287,6 @@ export default function Home() {
           gap: 8px;
         }
 
-        /* ─── Item card ─── */
         .item-card {
           background: var(--surface);
           border: 1px solid var(--border);
@@ -838,8 +1333,6 @@ export default function Home() {
         .swipe-hint.left-hint { left: 16px; color: var(--accent); }
         .swipe-hint.right-hint { right: 16px; color: var(--danger); }
 
-        .item-body { flex: 1; }
-
         .item-summary {
           font-size: 15px;
           line-height: 1.55;
@@ -866,6 +1359,15 @@ export default function Home() {
         .item-context {
           font-size: 12px;
           color: var(--text-2);
+        }
+
+        .item-due {
+          font-size: 11px;
+          color: var(--accent);
+          letter-spacing: 0.03em;
+          border: 1px solid rgba(232,255,60,0.3);
+          border-radius: 4px;
+          padding: 2px 6px;
         }
 
         .item-priority {
@@ -897,33 +1399,116 @@ export default function Home() {
           color: var(--text-2);
           font-family: inherit;
           font-size: 12px;
-          padding: 7px 12px;
+          padding: 8px 10px;
           cursor: pointer;
-          transition: all 0.12s;
+          transition: all 0.1s;
           white-space: nowrap;
-          touch-action: manipulation;
           flex: 1;
           text-align: center;
+          touch-action: manipulation;
         }
 
         .action-btn:hover { border-color: var(--border-2); color: var(--text-1); }
         .action-btn.done:hover { border-color: var(--accent); color: var(--accent); }
 
-        /* ─── Empty state ─── */
         .empty-state {
           text-align: center;
           color: var(--text-3);
           font-size: 14px;
           line-height: 2;
           margin-top: 80px;
+          white-space: pre-line;
         }
 
-        /* ─── Brief ─── */
-        .brief-section {
-          margin-top: 48px;
-          padding-top: 32px;
+        .context-picker {
+          display: flex;
+          gap: 8px;
+          justify-content: center;
+          margin-top: 32px;
+          padding-top: 24px;
           border-top: 1px solid var(--border);
-          margin-bottom: 24px;
+        }
+
+        .context-pick-btn {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          padding: 10px 16px;
+          font-size: 20px;
+          font-family: inherit;
+          cursor: pointer;
+          transition: all 0.15s;
+          touch-action: manipulation;
+        }
+
+        .context-pick-btn:hover { border-color: var(--border-2); }
+        .context-pick-btn.active { border-color: var(--accent); background: var(--accent-bg); }
+
+        .reclassify-row {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          justify-content: center;
+          margin-top: 14px;
+        }
+
+        .reclassify-btn {
+          background: none;
+          border: none;
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 11px;
+          cursor: pointer;
+          letter-spacing: 0.05em;
+          transition: color 0.15s;
+          padding: 8px 0;
+        }
+
+        .reclassify-btn:hover { color: var(--text-2); }
+        .reclassify-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .reclassify-result {
+          font-size: 11px;
+          color: var(--accent);
+        }
+
+        .backlog-section {
+          margin-top: 32px;
+          padding-top: 20px;
+          border-top: 1px solid var(--border);
+        }
+
+        .backlog-toggle {
+          width: 100%;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          background: none;
+          border: none;
+          color: var(--text-2);
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.3em;
+          text-transform: uppercase;
+          cursor: pointer;
+          padding: 0;
+          margin-bottom: 4px;
+          touch-action: manipulation;
+        }
+
+        .backlog-toggle:hover { color: var(--text-1); }
+
+        .backlog-count {
+          font-size: 10px;
+          letter-spacing: 0.05em;
+        }
+
+        /* Brief section */
+        .brief-section {
+          margin-top: 40px;
+          padding-top: 28px;
+          border-top: 1px solid var(--border);
+          margin-bottom: 16px;
         }
 
         .brief-btns {
@@ -931,9 +1516,10 @@ export default function Home() {
           gap: 8px;
           margin-bottom: 14px;
           overflow-x: auto;
+          flex-wrap: nowrap;
           padding-bottom: 2px;
-          -webkit-overflow-scrolling: touch;
           scrollbar-width: none;
+          -webkit-overflow-scrolling: touch;
         }
 
         .brief-btns::-webkit-scrollbar { display: none; }
@@ -977,100 +1563,46 @@ export default function Home() {
           color: var(--accent);
         }
 
-        .brief-timestamp {
-          display: block;
-          font-size: 11px;
-          color: var(--text-3);
-          margin-top: 12px;
-          letter-spacing: 0.04em;
-        }
-
-        /* ─── Context picker (desktop) ─── */
-        .context-picker {
-          display: flex;
-          gap: 8px;
-          justify-content: center;
-          margin-top: 12px;
-          padding-top: 24px;
-          border-top: 1px solid var(--border);
-        }
-
-        .context-pick-btn {
-          background: none;
-          border: 1px solid var(--border);
-          border-radius: var(--radius-sm);
-          padding: 10px 16px;
-          font-size: 20px;
-          cursor: pointer;
-          transition: all 0.15s;
-          touch-action: manipulation;
-        }
-
-        .context-pick-btn:hover { border-color: var(--border-2); }
-        .context-pick-btn.active { border-color: var(--accent); background: var(--accent-bg); }
-
-        /* ─── Reclassify ─── */
-        .reclassify-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          justify-content: center;
-          margin-top: 16px;
-        }
-
-        .reclassify-btn {
-          background: none;
-          border: none;
-          color: var(--text-3);
-          font-family: inherit;
-          font-size: 11px;
-          cursor: pointer;
-          letter-spacing: 0.05em;
-          transition: color 0.15s;
-          padding: 8px 0;
-        }
-
-        .reclassify-btn:hover { color: var(--text-2); }
-        .reclassify-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        .reclassify-result {
-          font-size: 11px;
-          color: var(--accent);
-        }
-
-        /* ─── Backlog ─── */
-        .backlog-section {
-          margin-top: 32px;
-          padding-top: 20px;
-          border-top: 1px solid var(--border);
-        }
-
-        .backlog-toggle {
-          width: 100%;
+        .brief-footer {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          margin-top: 12px;
+          gap: 8px;
+        }
+
+        .brief-timestamp {
+          font-size: 11px;
+          color: var(--text-3);
+          letter-spacing: 0.04em;
+        }
+
+        .speak-btn {
           background: none;
-          border: none;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
           color: var(--text-2);
           font-family: inherit;
-          font-size: 10px;
-          letter-spacing: 0.3em;
-          text-transform: uppercase;
+          font-size: 12px;
+          padding: 6px 10px;
           cursor: pointer;
-          padding: 0;
-          margin-bottom: 4px;
+          display: flex;
+          align-items: center;
+          gap: 5px;
+          transition: all 0.1s;
+          flex-shrink: 0;
           touch-action: manipulation;
         }
 
-        .backlog-toggle:hover { color: var(--text-1); }
+        .speak-btn:hover { border-color: var(--border-2); color: var(--text-1); }
 
-        .backlog-count {
-          font-size: 10px;
-          letter-spacing: 0.05em;
+        .brief-empty {
+          font-size: 12px;
+          color: var(--text-3);
+          letter-spacing: 0.02em;
         }
 
-        /* ─── Toast ─── */
+        /* Toast */
         .toast {
           position: fixed;
           bottom: 90px;
@@ -1086,7 +1618,7 @@ export default function Home() {
           white-space: nowrap;
         }
 
-        /* ─── Modal ─── */
+        /* Modals */
         .modal-overlay {
           position: fixed;
           inset: 0;
@@ -1149,7 +1681,7 @@ export default function Home() {
           color: var(--text-2);
         }
 
-        /* ─── Command palette ─── */
+        /* Command palette */
         .cmd-palette {
           background: var(--surface);
           border: 1px solid var(--border-2);
@@ -1158,6 +1690,71 @@ export default function Home() {
           max-width: 540px;
           overflow: hidden;
         }
+
+        .ask-palette { max-width: 580px; }
+
+        .ask-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 14px 22px 0;
+        }
+
+        .ask-label {
+          font-size: 10px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          color: var(--accent);
+        }
+
+        .ask-hint {
+          font-size: 10px;
+          color: var(--text-3);
+          letter-spacing: 0.05em;
+        }
+
+        .ask-input-row {
+          display: flex;
+          align-items: stretch;
+        }
+
+        .ask-cmd-input {
+          border-bottom: 1px solid var(--border) !important;
+        }
+
+        .ask-send-btn {
+          background: var(--accent);
+          border: none;
+          border-bottom: 1px solid var(--border);
+          color: var(--bg);
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 0 18px;
+          cursor: pointer;
+          transition: opacity 0.1s;
+          white-space: nowrap;
+          flex-shrink: 0;
+          touch-action: manipulation;
+        }
+
+        .ask-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .ask-result {
+          padding: 18px 22px;
+          border-top: 1px solid var(--border);
+          max-height: 320px;
+          overflow-y: auto;
+        }
+
+        .ask-answer {
+          font-size: 14px;
+          line-height: 1.75;
+          color: var(--text-1);
+          margin-bottom: 12px;
+        }
+
+        .ask-items { display: flex; flex-direction: column; }
 
         .cmd-input {
           width: 100%;
@@ -1205,92 +1802,11 @@ export default function Home() {
           text-transform: uppercase;
         }
 
-        /* ─── Bottom dock (mobile) ─── */
+        /* Bottom dock */
         .bottom-dock {
           display: none;
         }
 
-        /* ─── Mobile ─── */
-        @media (max-width: 640px) {
-          .apai-root {
-            padding: 20px 14px 140px;
-          }
-
-          .apai-header {
-            margin-bottom: 20px;
-          }
-
-          .header-settings-link {
-            display: none; /* settings accessible via bottom dock */
-          }
-
-          .capture-input {
-            font-size: 17px;
-            min-height: 130px;
-            padding: 16px 72px 16px 16px;
-          }
-
-          .mic-btn {
-            width: 58px;
-            height: 58px;
-            font-size: 26px;
-            bottom: 12px;
-            right: 12px;
-          }
-
-          .capture-btn {
-            flex: 1;
-            padding: 16px;
-            font-size: 15px;
-            text-align: center;
-          }
-
-          .capture-footer {
-            justify-content: stretch;
-          }
-
-          .capture-hint { display: none; }
-
-          .item-card {
-            padding: 14px;
-          }
-
-          .item-summary {
-            font-size: 15px;
-          }
-
-          .item-actions {
-            gap: 6px;
-          }
-
-          .action-btn {
-            font-size: 12px;
-            padding: 9px 8px;
-          }
-
-          /* Show bottom dock on mobile */
-          .bottom-dock {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--surface);
-            border-top: 1px solid var(--border);
-            padding: 10px 20px;
-            padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-            z-index: 100;
-          }
-
-          /* Hide inline context picker on mobile (it's in the dock) */
-          .context-picker { display: none; }
-
-          .toast { bottom: 100px; }
-        }
-
-        /* ─── Dock buttons ─── */
         .dock-context {
           display: flex;
           gap: 4px;
@@ -1314,14 +1830,75 @@ export default function Home() {
         .dock-settings-btn {
           color: var(--text-3);
           text-decoration: none;
-          font-size: 22px;
+          display: flex;
+          align-items: center;
           padding: 8px 10px;
           border-radius: 8px;
           transition: all 0.15s;
-          line-height: 1;
         }
 
         .dock-settings-btn:hover { color: var(--text-1); background: var(--surface-2); }
+
+        /* Mobile */
+        @media (max-width: 640px) {
+          .apai-root {
+            padding: 20px 14px 140px;
+          }
+
+          .capture-input {
+            font-size: 17px;
+            min-height: 130px;
+            padding: 16px 72px 16px 16px;
+          }
+
+          .mic-btn {
+            width: 58px;
+            height: 58px;
+            font-size: 24px;
+            bottom: 12px;
+            right: 12px;
+          }
+
+          .capture-btn {
+            flex: 1;
+            padding: 16px;
+            font-size: 15px;
+            text-align: center;
+          }
+
+          .capture-footer { justify-content: stretch; }
+          .capture-hint { display: none; }
+
+          .item-card { padding: 14px; }
+
+          .item-actions {
+            gap: 6px;
+          }
+
+          .action-btn {
+            font-size: 12px;
+            padding: 9px 8px;
+          }
+
+          .bottom-dock {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 10px 16px;
+            padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+            z-index: 100;
+          }
+
+          .context-picker { display: none; }
+
+          .toast { bottom: 100px; }
+        }
       `}</style>
     </main>
   )
@@ -1341,7 +1918,7 @@ function ItemCard({
   isBacklog?: boolean
 }) {
   const isTemp = item.id.startsWith('temp-')
-  const color = TYPE_COLORS[item.ai_type] || '#666666'
+  const color = TYPE_COLORS[item.ai_type] || '#555'
   const cardRef = useRef<HTMLDivElement>(null)
   const startXRef = useRef(0)
   const currentXRef = useRef(0)
@@ -1390,17 +1967,20 @@ function ItemCard({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>Færdig ✓</span>
-      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>Arkiver →</span>
-      <div className="item-body">
+      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>
+        Færdig
+      </span>
+      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>
+        Arkiver
+      </span>
+      <div>
         <div className="item-summary">{item.ai_summary || item.raw_input}</div>
         <div className="item-meta">
-          <span className="item-type" style={{ background: color + '18', color }}>
+          <span className="item-type" style={{ background: color + '20', color }}>
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
-          {item.ai_context && (
-            <span className="item-context">↳ {item.ai_context}</span>
-          )}
+          {item.ai_context && <span className="item-context">↳ {item.ai_context}</span>}
+          {item.due_at && <span className="item-due">{formatDueAt(item.due_at)}</span>}
           <span className="item-priority">{PRIORITY_DOT(item.ai_priority)}</span>
         </div>
         {item.ai_summary && item.ai_summary !== item.raw_input && (
@@ -1409,14 +1989,22 @@ function ItemCard({
       </div>
       {!isTemp && (
         <div className="item-actions">
-          <button className="action-btn done" onClick={() => onDone(item.id)}>Færdig</button>
+          <button className="action-btn done" onClick={() => onDone(item.id)}>
+            Færdig
+          </button>
           {!isBacklog && onBacklog && (
-            <button className="action-btn" onClick={() => onBacklog(item.id)}>Backlog</button>
+            <button className="action-btn" onClick={() => onBacklog(item.id)}>
+              Backlog
+            </button>
           )}
           {isBacklog && (
-            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>→ Indbakke</button>
+            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>
+              → Indbakke
+            </button>
           )}
-          <button className="action-btn" onClick={() => onArchive(item.id)}>Arkiver</button>
+          <button className="action-btn" onClick={() => onArchive(item.id)}>
+            Arkiver
+          </button>
         </div>
       )}
     </div>

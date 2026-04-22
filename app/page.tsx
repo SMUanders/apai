@@ -91,6 +91,7 @@ export default function Home() {
   const [reclassifyResult, setReclassifyResult] = useState<number | null>(null)
   const [backlogItems, setBacklogItems] = useState<Item[]>([])
   const [backlogOpen, setBacklogOpen] = useState(false)
+  const [sagerOpen, setSagerOpen] = useState(true)
   const [briefText, setBriefText] = useState('')
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefType, setBriefType] = useState<string | null>(null)
@@ -1053,6 +1054,44 @@ export default function Home() {
         </div>
       )}
 
+      {/* Mine sager */}
+      {existingGroups.length > 0 && activeFilter !== 'sager' && (
+        <section className="backlog-section sager-section">
+          <button className="backlog-toggle sager-toggle" onClick={() => setSagerOpen((o) => !o)}>
+            <span>⊙ Mine sager</span>
+            <span className="backlog-count">
+              {existingGroups.length} {sagerOpen ? '▲' : '▼'}
+            </span>
+          </button>
+          {sagerOpen && (
+            <div style={{ marginTop: 8 }}>
+              {existingGroups.map((label) => {
+                const groupItems = items.filter((i) => i.group_label === label)
+                return (
+                  <div key={label} className="sager-group">
+                    <div className="sager-group-header">{label} · {groupItems.length}</div>
+                    <div className="item-list">
+                      {groupItems.map((item) => (
+                        <ItemCard
+                          key={item.id}
+                          item={item}
+                          onDone={markDone}
+                          onArchive={archive}
+                          onBacklog={moveToBacklog}
+                          onUpdate={handleItemUpdate}
+                          existingGroups={existingGroups}
+                          onGroupUpdate={handleGroupUpdate}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
       {/* Backlog */}
       {backlogItems.length > 0 && (
         <section className="backlog-section">
@@ -1925,6 +1964,28 @@ export default function Home() {
           margin-top: 32px;
           padding-top: 20px;
           border-top: 1px solid var(--border);
+        }
+
+        .sager-section {
+          border-top-color: rgba(232,255,60,0.12);
+        }
+
+        .sager-toggle {
+          color: var(--text-2) !important;
+        }
+        .sager-toggle:hover { color: var(--accent) !important; }
+
+        .sager-group {
+          margin-bottom: 16px;
+        }
+
+        .sager-group-header {
+          font-size: 9px;
+          letter-spacing: 0.3em;
+          text-transform: uppercase;
+          color: #4A6A00;
+          font-weight: 700;
+          padding: 6px 0 8px;
         }
 
         .backlog-toggle {

@@ -33,16 +33,15 @@ export async function POST() {
   }
   if (!allItems?.length) return NextResponse.json({ duplicates: [], groups: [] })
 
-  // Prioriter: høj prioritet og ungrouped items; cap til MAX_ITEMS
+  // Kun ungrouped items — AI skal ikke foreslå grupper for items der allerede er grupperet
   const items = allItems
-    .filter((i) => i.ai_type !== 'none')
+    .filter((i) => i.ai_type !== 'none' && !i.group_label)
     .slice(0, MAX_ITEMS)
 
   const input = items.map((i) => ({
     id: i.id,
-    s: (i.ai_summary || i.raw_input).slice(0, 120), // kortere summaries
+    s: (i.ai_summary || i.raw_input).slice(0, 120),
     t: i.ai_type,
-    ...(i.group_label ? { g: i.group_label } : {}),
   }))
 
   const tBuild = Date.now()

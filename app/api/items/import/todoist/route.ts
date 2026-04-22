@@ -8,14 +8,45 @@ interface TodoistTask {
   description: string
   priority: number // Todoist: 4=urgent 3=high 2=medium 1=normal
   due: { date: string; datetime?: string } | null
+  deadline: { date: string; datetime?: string } | null
   project_id: string
   labels: string[]
-  is_completed: boolean
+  checked: boolean
+}
+
+interface TodoistResponse {
+  results: TodoistTask[]
+  next_cursor: string | null
 }
 
 function todoistPriority(p: number): number {
   // Todoist 4→APAI 5, 3→4, 2→3, 1→2
   return p + 1
+}
+
+async function fetchAllTasks(token: string): Promise<TodoistTask[]> {
+  const tasks: TodoistTask[] = []
+  let cursor: string | null = null
+
+  do {
+    const url = new URL('https://api.todoist.com/api/v1/tasks')
+    if (cursor) url.searchParams.set('cursor', cursor)
+
+    const res = await fetch(url.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+
+    if (!res.ok) {
+      const text = await res.text()
+      throw new Error(`Todoist API fejl: ${res.status} ${text}`)
+    }
+
+    const data: TodoistResponse = await res.json()
+    tasks.push(...data.results.filter((t) => !t.checked))
+    cursor = data.next_cursor
+  } while (cursor)
+
+  return tasks
 }
 
 export async function POST() {
@@ -27,22 +58,11 @@ export async function POST() {
     )
   }
 
-  // Hent åbne tasks fra Todoist
   let tasks: TodoistTask[]
   try {
-    const res = await fetch('https://api.todoist.com/rest/v2/tasks', {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-    if (!res.ok) {
-      const text = await res.text()
-      return NextResponse.json(
-        { error: `Todoist API fejl: ${res.status} ${text}` },
-        { status: 502 }
-      )
-    }
-    tasks = await res.json()
+    tasks = await fetchAllTasks(token)
   } catch (err) {
-    return NextResponse.json({ error: `Netværksfejl: ${err}` }, { status: 502 })
+    return NextResponse.json({ error: String(err) }, { status: 502 })
   }
 
   const found = tasks.length
@@ -69,12 +89,12 @@ export async function POST() {
       continue
     }
 
-    // Byg raw input: titel + evt. beskrivelse
     const raw = task.description?.trim()
       ? `${task.content}\n\n${task.description.trim()}`
       : task.content
 
-    // AI-klassificér
+    const dueDate = task.due?.datetime ?? task.due?.date ?? task.deadline?.date ?? null
+
     let classification
     try {
       classification = await classifyInput(raw)
@@ -85,7 +105,7 @@ export async function POST() {
         context: `todoist:${task.id}`,
         context_trigger: null,
         priority: todoistPriority(task.priority),
-        due_at: task.due?.datetime ?? task.due?.date ?? null,
+        due_at: dueDate,
         confident: false,
       }
     }
@@ -102,7 +122,7 @@ export async function POST() {
 
     let result = await supabase
       .from('items')
-      .insert({ ...baseInsert, due_at: classification.due_at ?? task.due?.datetime ?? task.due?.date ?? null })
+      .insert({ ...baseInsert, due_at: classification.due_at ?? dueDate })
       .select()
       .single()
 

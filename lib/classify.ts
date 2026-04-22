@@ -1,9 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
+import { complete } from './ai'
 import { ItemType, ContextTrigger } from './supabase'
-
-const client = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})
 
 export interface Classification {
   type: ItemType
@@ -64,18 +60,11 @@ Vær kort. Vær præcis. Kun JSON.`
 
 export async function classifyInput(rawInput: string): Promise<Classification> {
   const referenceDate = new Date().toISOString()
-
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 400,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: `[Referencedato: ${referenceDate}]\n\n${rawInput}` }],
-  })
-
-  const text = message.content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as { type: 'text'; text: string }).text)
-    .join('')
+  const text = await complete(
+    SYSTEM_PROMPT,
+    `[Referencedato: ${referenceDate}]\n\n${rawInput}`,
+    400
+  )
 
   const cleaned = text.replace(/```json|```/g, '').trim()
   const parsed = JSON.parse(cleaned)

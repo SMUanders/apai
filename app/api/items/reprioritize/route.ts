@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 const SYSTEM_PROMPT = `Du er en prioriteringsassistent. Du får en liste over items med id, raw_input, ai_type, ai_priority og created_at.
 
@@ -28,18 +26,7 @@ export async function POST() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!items?.length) return NextResponse.json({ updated: 0, changes: [] })
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2000,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: JSON.stringify(items) }],
-  })
-
-  const text = message.content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as { type: 'text'; text: string }).text)
-    .join('')
-
+  const text = await complete(SYSTEM_PROMPT, JSON.stringify(items), 2000)
   const cleaned = text.replace(/```json|```/g, '').trim()
   const newPriorities: { id: string; ai_priority: number; ai_type: string }[] = JSON.parse(cleaned)
 

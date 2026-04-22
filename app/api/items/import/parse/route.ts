@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+import { completeWithPDF } from '@/lib/ai'
 
 const PDF_PROMPT = `Du er en assistent der udtrækker opgaver fra dokumenter.
 
@@ -50,32 +48,12 @@ async function handlePDF(req: NextRequest): Promise<Response> {
   }
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 2000,
-      system: PDF_PROMPT,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'document',
-            source: { type: 'base64', media_type: 'application/pdf', data: base64 },
-          } as Anthropic.DocumentBlockParam,
-          { type: 'text', text: 'Udtræk alle opgavelinjer.' },
-        ],
-      }],
-    })
-
-    const text = message.content
-      .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('')
+    const text = await completeWithPDF(PDF_PROMPT, 'Udtræk alle opgavelinjer.', base64, 2000)
 
     let lines: string[]
     try {
       lines = JSON.parse(text.replace(/```json|```/g, '').trim())
     } catch {
-      // Fallback: split on newlines if Claude returned plain text instead of JSON
       lines = text.split('\n').map((l) => l.trim()).filter(Boolean)
     }
 

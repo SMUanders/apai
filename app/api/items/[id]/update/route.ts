@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 const SYSTEM_PROMPT = `Du er APAI's opdateringsassistent.
 
@@ -46,31 +44,18 @@ export async function POST(
   }
 
   try {
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 300,
-      system: SYSTEM_PROMPT,
-      messages: [{
-        role: 'user',
-        content: `Item:\nType: ${current.ai_type}\nTitel: ${current.ai_summary}\nPrioritet: ${current.ai_priority}\nKontekst: ${current.context_trigger ?? 'ingen'}\n\nOpdatering: ${update_text}`,
-      }],
-    })
-
-    const text = message.content
-      .filter((b) => b.type === 'text')
-      .map((b) => (b as { type: 'text'; text: string }).text)
-      .join('')
-
+    const userMsg = `Item:\nType: ${current.ai_type}\nTitel: ${current.ai_summary}\nPrioritet: ${current.ai_priority}\nKontekst: ${current.context_trigger ?? 'ingen'}\n\nOpdatering: ${update_text}`
+    const text = await complete(SYSTEM_PROMPT, userMsg, 300)
     parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
   } catch {
     return NextResponse.json({ error: 'AI fejlede' }, { status: 500 })
   }
 
   const updates: Record<string, unknown> = {}
-  if (parsed.ai_type != null)       updates.ai_type       = parsed.ai_type
-  if (parsed.ai_summary != null)    updates.ai_summary    = parsed.ai_summary
-  if (parsed.ai_priority != null)   updates.ai_priority   = parsed.ai_priority
-  if (parsed.context_trigger != null) updates.context_trigger = parsed.context_trigger
+  if (parsed.ai_type != null)          updates.ai_type       = parsed.ai_type
+  if (parsed.ai_summary != null)       updates.ai_summary    = parsed.ai_summary
+  if (parsed.ai_priority != null)      updates.ai_priority   = parsed.ai_priority
+  if (parsed.context_trigger != null)  updates.context_trigger = parsed.context_trigger
 
   const { data, error } = await supabase
     .from('items')

@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { complete } from '@/lib/ai'
 import { Item } from '@/lib/supabase'
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
+const SYSTEM = `Du er APAI, et personligt AI-hukommelsessystem. Brugeren spørger om sine gemte items.
+Svar på dansk — præcist og kort, max 3 sætninger.
+Returner KUN gyldig JSON:
+{
+  "answer": "dit svar her",
+  "relevant_indices": [liste af 0-baserede indeksnumre for relevante items, max 5]
+}`
 
-// POST /api/ask — semantisk søgning via Claude
 export async function POST(req: NextRequest) {
   const { question, items } = (await req.json()) as { question: string; items: Item[] }
 
@@ -16,29 +21,7 @@ export async function POST(req: NextRequest) {
     .map((item, idx) => `[${idx}] ${item.ai_summary || item.raw_input} (${item.ai_type}, prio ${item.ai_priority})`)
     .join('\n')
 
-  const message = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 500,
-    system: `Du er APAI, et personligt AI-hukommelsessystem. Brugeren spørger om sine gemte items.
-Svar på dansk — præcist og kort, max 3 sætninger.
-Returner KUN gyldig JSON:
-{
-  "answer": "dit svar her",
-  "relevant_indices": [liste af 0-baserede indeksnumre for relevante items, max 5]
-}`,
-    messages: [
-      {
-        role: 'user',
-        content: `Mine items:\n${itemsText || '(ingen items)'}\n\nSpørgsmål: ${question}`,
-      },
-    ],
-  })
-
-  const text = message.content
-    .filter((b) => b.type === 'text')
-    .map((b) => (b as { type: 'text'; text: string }).text)
-    .join('')
-
+  const text = await complete(SYSTEM, `Mine items:\n${itemsText || '(ingen items)'}\n\nSpørgsmål: ${question}`, 500)
   const cleaned = text.replace(/```json|```/g, '').trim()
   const parsed = JSON.parse(cleaned)
 

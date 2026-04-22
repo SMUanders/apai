@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
+import { completeStream } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
-
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY! })
 
 const BRIEF_PROMPT: Record<string, string> = {
   morning: `MORGEN: Start med "God morgen." Nævn de 2-3 vigtigste ting for i dag. Slut med én kort opfordring.`,
@@ -29,35 +27,17 @@ export async function POST(req: NextRequest) {
     .map((i) => `- [${i.ai_type}, prio ${i.ai_priority}] ${i.ai_summary}`)
     .join('\n')
 
-  const systemPrompt = `Du er APAI — en personlig assistent.
+  const system = `Du er APAI — en personlig assistent.
 Du får brugerens indbakke. Skriv en meget kort briefing på dansk.
 ${BRIEF_PROMPT[type]}
 Stil: rolig, menneskelig, ingen bullet points — løbende tekst. Max 60 ord.`
 
-  const stream = await client.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 150,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: `Indbakke:\n${itemList || '(tom)'}` }],
-  })
+  const { stream, fullText } = completeStream(system, `Indbakke:\n${itemList || '(tom)'}`, 150)
 
-  let fullContent = ''
+  // Gem til DB når streaming er færdig
+  fullText.then((content) => supabase.from('briefs').insert({ type, content }))
 
-  const readable = new ReadableStream({
-    async start(controller) {
-      for await (const chunk of stream) {
-        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-          const text = chunk.delta.text
-          fullContent += text
-          controller.enqueue(new TextEncoder().encode(text))
-        }
-      }
-      controller.close()
-      await supabase.from('briefs').insert({ type, content: fullContent })
-    },
-  })
-
-  return new Response(readable, {
+  return new Response(stream, {
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   })
 }

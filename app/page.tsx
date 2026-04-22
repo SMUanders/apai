@@ -68,6 +68,7 @@ const FILTERS = [
   { id: 'med-dato', label: 'Med dato' },
   { id: 'hoj-prioritet', label: 'Høj prioritet' },
   { id: 'review', label: '⚑ Review' },
+  { id: 'sager', label: '⊙ Sager' },
 ]
 
 const SORTS = [
@@ -119,6 +120,10 @@ export default function Home() {
   const captureResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Briefing modal
   const [briefOpen, setBriefOpen] = useState(false)
+  // Group suggestions
+  const [groupSuggestOpen, setGroupSuggestOpen] = useState(false)
+  const [groupSuggestions, setGroupSuggestions] = useState<{ label: string; item_ids: string[]; reasoning: string }[]>([])
+  const [groupSuggestLoading, setGroupSuggestLoading] = useState(false)
   // Speech
   const [speaking, setSpeaking] = useState(false)
 
@@ -375,6 +380,34 @@ export default function Home() {
     setItems((prev) => prev.map((i) => (i.id === id ? updatedItem : i)))
   }
 
+  async function handleGroupUpdate(id: string, group_label: string | null) {
+    const res = await fetch(`/api/items/${id}/group`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_label }),
+    })
+    const data = await res.json()
+    if (data.item) {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, group_label: data.item.group_label } : i)))
+      setBacklogItems((prev) => prev.map((i) => (i.id === id ? { ...i, group_label: data.item.group_label } : i)))
+    }
+  }
+
+  async function suggestGroups() {
+    setGroupSuggestLoading(true)
+    setGroupSuggestions([])
+    const res = await fetch('/api/items/suggest-groups', { method: 'POST' })
+    const data = await res.json()
+    setGroupSuggestions(data.suggestions ?? [])
+    setGroupSuggestLoading(false)
+    setGroupSuggestOpen(true)
+  }
+
+  async function applyGroupSuggestion(label: string, item_ids: string[]) {
+    await Promise.all(item_ids.map((id) => handleGroupUpdate(id, label)))
+    setGroupSuggestions((prev) => prev.filter((s) => s.label !== label))
+  }
+
   async function moveToInbox(id: string) {
     setBacklogItems((prev) => prev.filter((i) => i.id !== id))
     const res = await fetch(`/api/items/${id}`, {
@@ -563,11 +596,21 @@ export default function Home() {
     else if (activeFilter === 'med-dato') result = result.filter((i) => i.due_at)
     else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4)
     else if (activeFilter === 'review') result = result.filter((i) => i.ai_type === 'none' || i.ai_context === '__review__')
+    else if (activeFilter === 'sager') result = result.filter((i) => !!i.group_label)
+
+    const TYPE_ORDER: Record<string, number> = { task: 0, reminder: 0, idea: 1, note: 1, someday: 2, none: 2 }
 
     result = [...result].sort((a, b) => {
       if (activeSort === 'prioritet') {
         const diff = b.ai_priority - a.ai_priority
-        return sortDir === 'desc' ? diff : -diff
+        if (diff !== 0) return sortDir === 'desc' ? diff : -diff
+        // Within same priority: tasks/reminders first
+        const tDiff = (TYPE_ORDER[a.ai_type] ?? 1) - (TYPE_ORDER[b.ai_type] ?? 1)
+        if (tDiff !== 0) return tDiff
+        // Items with due_at coming up first
+        if (a.due_at && !b.due_at) return -1
+        if (!a.due_at && b.due_at) return 1
+        return 0
       } else if (activeSort === 'dato') {
         const inf = sortDir === 'asc' ? Infinity : -Infinity
         const aDate = a.due_at ? new Date(a.due_at).getTime() : inf
@@ -580,8 +623,24 @@ export default function Home() {
       }
     })
 
+    // Keep same-group items adjacent (secondary stable sort by group_label)
+    if (activeFilter !== 'sager') {
+      result.sort((a, b) => {
+        if (!a.group_label && !b.group_label) return 0
+        if (!a.group_label) return 1
+        if (!b.group_label) return -1
+        if (a.group_label === b.group_label) return 0
+        return 0 // different groups: preserve priority order
+      })
+    }
+
     return result
   }, [items, activeFilter, activeSort, sortDir, searchQuery])
+
+  const existingGroups = useMemo(
+    () => Array.from(new Set(items.filter((i) => i.group_label).map((i) => i.group_label!))).sort(),
+    [items]
+  )
 
   const isFiltered =
     activeFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
@@ -758,6 +817,8 @@ export default function Home() {
                 onArchive={archive}
                 onBacklog={moveToBacklog}
                 onUpdate={handleItemUpdate}
+                existingGroups={existingGroups}
+                onGroupUpdate={handleGroupUpdate}
               />
             ))}
           </div>
@@ -768,26 +829,70 @@ export default function Home() {
       {(isFiltered ? filteredItems : rest).length > 0 && (
         <section className="inbox-section">
           {isFiltered ? (
-            <h2 className="section-label">
-              {searchQuery.trim()
-                ? `"${searchQuery}" · ${filteredItems.length}`
-                : `${FILTERS.find((f) => f.id === activeFilter)?.label ?? 'Indbakke'} · ${filteredItems.length}`}
-            </h2>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <h2 className="section-label">
+                {searchQuery.trim()
+                  ? `"${searchQuery}" · ${filteredItems.length}`
+                  : `${FILTERS.find((f) => f.id === activeFilter)?.label ?? 'Indbakke'} · ${filteredItems.length}`}
+              </h2>
+              {activeFilter === 'sager' && (
+                <button
+                  onClick={suggestGroups}
+                  disabled={groupSuggestLoading}
+                  style={{ background: 'none', border: 'none', color: '#555', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.06em' }}
+                >
+                  {groupSuggestLoading ? 'analyserer…' : '+ foreslå'}
+                </button>
+              )}
+            </div>
           ) : (
             <h2 className="section-label">Indbakke</h2>
           )}
-          <div className="item-list">
-            {(isFiltered ? filteredItems : rest).map((item) => (
-              <ItemCard
-                key={item.id}
-                item={item}
-                onDone={markDone}
-                onArchive={archive}
-                onBacklog={moveToBacklog}
-                onUpdate={handleItemUpdate}
-              />
-            ))}
-          </div>
+
+          {activeFilter === 'sager' ? (
+            /* Grupperet visning */
+            <div className="item-list">
+              {Object.entries(
+                filteredItems.reduce<Record<string, Item[]>>((acc, item) => {
+                  const key = item.group_label!
+                  if (!acc[key]) acc[key] = []
+                  acc[key].push(item)
+                  return acc
+                }, {})
+              ).sort(([a], [b]) => a.localeCompare(b)).map(([label, groupItems]) => (
+                <div key={label} className="group-section">
+                  <div className="group-header">{label} · {groupItems.length}</div>
+                  {groupItems.map((item) => (
+                    <ItemCard
+                      key={item.id}
+                      item={item}
+                      onDone={markDone}
+                      onArchive={archive}
+                      onBacklog={moveToBacklog}
+                      onUpdate={handleItemUpdate}
+                      existingGroups={existingGroups}
+                      onGroupUpdate={handleGroupUpdate}
+                    />
+                  ))}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="item-list">
+              {(isFiltered ? filteredItems : rest).map((item) => (
+                <ItemCard
+                  key={item.id}
+                  item={item}
+                  onDone={markDone}
+                  onArchive={archive}
+                  onBacklog={moveToBacklog}
+                  onUpdate={handleItemUpdate}
+                  existingGroups={existingGroups}
+                  onGroupUpdate={handleGroupUpdate}
+                />
+              ))}
+            </div>
+          )}
         </section>
       )}
 
@@ -818,6 +923,8 @@ export default function Home() {
                   onArchive={archive}
                   onBacklog={moveToInbox}
                   onUpdate={handleItemUpdate}
+                  existingGroups={existingGroups}
+                  onGroupUpdate={handleGroupUpdate}
                   isBacklog
                 />
               ))}
@@ -915,6 +1022,42 @@ export default function Home() {
 
       {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
+
+      {/* Group suggestions modal */}
+      {groupSuggestOpen && (
+        <div className="modal-overlay" onClick={() => setGroupSuggestOpen(false)}>
+          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <span style={{ fontSize: 11, letterSpacing: '0.3em', textTransform: 'uppercase', color: '#727272' }}>Foreslåede sager</span>
+              <button onClick={() => setGroupSuggestOpen(false)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+            {groupSuggestions.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#555', padding: '8px 0' }}>Ingen oplagte grupper fundet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {groupSuggestions.map((s) => (
+                  <div key={s.label} style={{ background: '#111', border: '1px solid #262626', borderRadius: 8, padding: '14px 16px' }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0', marginBottom: 6 }}>{s.label}</div>
+                    <div style={{ fontSize: 12, color: '#555', marginBottom: 10 }}>{s.reasoning}</div>
+                    <div style={{ fontSize: 11, color: '#727272', marginBottom: 12 }}>
+                      {s.item_ids.map((id) => {
+                        const item = items.find((i) => i.id === id)
+                        return item ? <div key={id} style={{ padding: '2px 0' }}>· {item.ai_summary || item.raw_input}</div> : null
+                      })}
+                    </div>
+                    <button
+                      onClick={() => applyGroupSuggestion(s.label, s.item_ids)}
+                      style={{ background: '#E8FF3C', border: 'none', borderRadius: 6, color: '#080808', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, padding: '8px 16px', cursor: 'pointer', touchAction: 'manipulation' }}
+                    >
+                      Opret sag
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Duplikat-advarsel */}
       {duplicate && (
@@ -1397,6 +1540,119 @@ export default function Home() {
           border-radius: 4px;
           padding: 2px 5px;
           font-weight: 500;
+        }
+
+        .group-label-badge {
+          font-size: 9px;
+          letter-spacing: 0.08em;
+          color: #E8FF3C;
+          border: 1px solid #4A5A00;
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-weight: 600;
+          cursor: pointer;
+        }
+
+        .group-attach-btn {
+          font-size: 9px;
+          letter-spacing: 0.06em;
+          color: #3A3A3A;
+          background: none;
+          border: 1px dashed #2A2A2A;
+          border-radius: 4px;
+          padding: 2px 6px;
+          cursor: pointer;
+          font-family: inherit;
+        }
+
+        .group-picker {
+          margin-top: 10px;
+          background: #111;
+          border: 1px solid #262626;
+          border-radius: 8px;
+          padding: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .group-picker-option {
+          background: none;
+          border: 1px solid #262626;
+          border-radius: 6px;
+          color: #A2A2A2;
+          font-family: inherit;
+          font-size: 12px;
+          padding: 8px 12px;
+          cursor: pointer;
+          text-align: left;
+          touch-action: manipulation;
+        }
+
+        .group-picker-option:hover { border-color: #4A4A4A; color: #F0F0F0; }
+        .group-picker-option.clear { color: #555; }
+
+        .group-picker-new {
+          display: flex;
+          gap: 6px;
+        }
+
+        .group-picker-input {
+          flex: 1;
+          background: #0C0C0C;
+          border: 1px solid #262626;
+          border-radius: 6px;
+          color: #F0F0F0;
+          font-family: inherit;
+          font-size: 12px;
+          padding: 8px 10px;
+          outline: none;
+        }
+
+        .group-picker-save {
+          background: #E8FF3C;
+          border: none;
+          border-radius: 6px;
+          color: #080808;
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 700;
+          padding: 8px 12px;
+          cursor: pointer;
+          touch-action: manipulation;
+        }
+
+        .group-section {
+          margin-bottom: 8px;
+        }
+
+        .group-header {
+          font-size: 10px;
+          letter-spacing: 0.3em;
+          text-transform: uppercase;
+          color: #E8FF3C;
+          padding: 8px 0 6px;
+          font-weight: 600;
+        }
+
+        .modal-overlay {
+          position: fixed;
+          inset: 0;
+          background: rgba(0,0,0,0.7);
+          z-index: 200;
+          display: flex;
+          align-items: flex-end;
+          padding: 0;
+        }
+
+        .modal-box {
+          background: #111;
+          border: 1px solid #262626;
+          border-radius: 16px 16px 0 0;
+          padding: 24px 20px 40px;
+          width: 100%;
+          max-height: 80vh;
+          overflow-y: auto;
         }
 
         .section-label {
@@ -2076,6 +2332,8 @@ function ItemCard({
   onArchive,
   onBacklog,
   onUpdate,
+  onGroupUpdate,
+  existingGroups = [],
   isBacklog = false,
 }: {
   item: Item
@@ -2083,6 +2341,8 @@ function ItemCard({
   onArchive: (id: string) => void
   onBacklog?: (id: string) => void
   onUpdate?: (id: string, updated: Item) => void
+  onGroupUpdate?: (id: string, group_label: string | null) => void
+  existingGroups?: string[]
   isBacklog?: boolean
 }) {
   const isTemp = item.id.startsWith('temp-')
@@ -2097,6 +2357,8 @@ function ItemCard({
   const [updateText, setUpdateText] = useState('')
   const [updateLoading, setUpdateLoading] = useState(false)
   const [updateChanges, setUpdateChanges] = useState<string[] | null>(null)
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false)
+  const [newGroupInput, setNewGroupInput] = useState('')
 
   function onTouchStart(e: React.TouchEvent) {
     if (updateOpen) return
@@ -2181,6 +2443,23 @@ function ItemCard({
           <span className="item-type" style={{ background: color + '20', color }}>
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
+          {item.group_label && (
+            <span
+              className="group-label-badge"
+              onClick={(e) => { e.stopPropagation(); setGroupPickerOpen((o) => !o) }}
+              title="Skift sag"
+            >
+              {item.group_label}
+            </span>
+          )}
+          {!item.group_label && onGroupUpdate && (
+            <button
+              className="group-attach-btn"
+              onClick={(e) => { e.stopPropagation(); setGroupPickerOpen((o) => !o) }}
+            >
+              ~ sag
+            </button>
+          )}
           {item.ai_context?.startsWith('todoist:') && (
             <span className="source-badge">Todoist</span>
           )}
@@ -2235,8 +2514,61 @@ function ItemCard({
         </div>
       )}
 
+      {/* Gruppe-picker */}
+      {groupPickerOpen && onGroupUpdate && (
+        <div className="group-picker">
+          {existingGroups.filter((g) => g !== item.group_label).map((g) => (
+            <button
+              key={g}
+              className="group-picker-option"
+              onClick={() => { onGroupUpdate(item.id, g); setGroupPickerOpen(false) }}
+            >
+              {g}
+            </button>
+          ))}
+          <div className="group-picker-new">
+            <input
+              className="group-picker-input"
+              placeholder="Ny sag…"
+              value={newGroupInput}
+              onChange={(e) => setNewGroupInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newGroupInput.trim()) {
+                  onGroupUpdate(item.id, newGroupInput.trim())
+                  setNewGroupInput('')
+                  setGroupPickerOpen(false)
+                }
+                if (e.key === 'Escape') setGroupPickerOpen(false)
+              }}
+              autoFocus
+            />
+            <button
+              className="group-picker-save"
+              disabled={!newGroupInput.trim()}
+              onClick={() => {
+                if (newGroupInput.trim()) {
+                  onGroupUpdate(item.id, newGroupInput.trim())
+                  setNewGroupInput('')
+                  setGroupPickerOpen(false)
+                }
+              }}
+            >
+              OK
+            </button>
+          </div>
+          {item.group_label && (
+            <button
+              className="group-picker-option clear"
+              onClick={() => { onGroupUpdate(item.id, null); setGroupPickerOpen(false) }}
+            >
+              Fjern fra sag
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Handlinger */}
-      {!isTemp && !updateOpen && (
+      {!isTemp && !updateOpen && !groupPickerOpen && (
         <div className="item-actions">
           <button className="action-btn update-btn" onClick={openUpdate}>Opdatér</button>
           <button className="action-btn done" onClick={() => onDone(item.id)}>Færdig</button>

@@ -18,6 +18,7 @@ export interface Item {
   ai_priority: number
   context_trigger: ContextTrigger | null
   due_at: string | null
+  group_label?: string | null
   status: ItemStatus
   created_at: string
   updated_at: string

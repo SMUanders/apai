@@ -53,12 +53,18 @@ export async function POST() {
     ...(i.group_label ? { group_label: i.group_label } : {}),
   }))
 
+  let text: string
   try {
-    const text = await complete(SYSTEM, JSON.stringify(input), 1500)
+    text = await complete(SYSTEM, JSON.stringify(input), 1500)
+  } catch (err) {
+    console.error('[analyze] AI kald fejlede:', err)
+    return NextResponse.json({ error: 'AI-analyse fejlede — prøv igen' }, { status: 500 })
+  }
+
+  try {
     const cleaned = text.replace(/```json|```/g, '').trim()
     const result = JSON.parse(cleaned)
 
-    // Resolve ids to item objects for duplicates
     const itemMap = new Map(items.map((i) => [i.id, i]))
     const duplicates = (result.duplicates ?? [])
       .filter((d: { a_id: string; b_id: string }) => itemMap.has(d.a_id) && itemMap.has(d.b_id))
@@ -66,7 +72,7 @@ export async function POST() {
         a: itemMap.get(d.a_id),
         b: itemMap.get(d.b_id),
         reason: d.reason,
-        score: 1, // AI-confirmed = høj tillid
+        score: 1,
       }))
 
     const groups = (result.groups ?? []).filter(
@@ -74,7 +80,8 @@ export async function POST() {
     )
 
     return NextResponse.json({ duplicates, groups })
-  } catch {
-    return NextResponse.json({ duplicates: [], groups: [] })
+  } catch (err) {
+    console.error('[analyze] JSON parse fejlede:', err, '\nRå svar:', text)
+    return NextResponse.json({ error: 'Kunne ikke parse AI-svar' }, { status: 500 })
   }
 }

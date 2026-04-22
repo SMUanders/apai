@@ -122,12 +122,14 @@ export default function Home() {
   const [briefOpen, setBriefOpen] = useState(false)
   // Group suggestions
   const [groupSuggestions, setGroupSuggestions] = useState<{ label: string; item_ids: string[]; reasoning: string }[]>([])
-  const [groupSuggestLoading, setGroupSuggestLoading] = useState(false)
   // Duplicate detection
   type DupItem = { id: string; ai_summary: string | null; raw_input: string }
   const [duplicatePairs, setDuplicatePairs] = useState<{ a: DupItem; b: DupItem; score: number; reason?: string; aiConfirmed?: boolean }[]>([])
   const [dismissedPairs, setDismissedPairs] = useState<Set<string>>(new Set())
-  const [aiPanelOpen, setAiPanelOpen] = useState(true)
+  // AI analyse panel
+  const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  const [aiAnalysisStatus, setAiAnalysisStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [aiAnalysisMsg, setAiAnalysisMsg] = useState<string | null>(null)
   // Speech
   const [speaking, setSpeaking] = useState(false)
 
@@ -406,27 +408,46 @@ export default function Home() {
   }
 
   async function analyzeAll() {
-    setGroupSuggestLoading(true)
-    setGroupSuggestions([])
-    // Reset only AI-sourced duplicates, keep word-overlap ones
-    setDuplicatePairs((prev) => prev.filter((p) => !p.aiConfirmed))
-    const res = await fetch('/api/items/analyze', { method: 'POST' })
-    if (!res.ok) { setGroupSuggestLoading(false); return }
-    const data = await res.json()
-    // AI duplicates get aiConfirmed flag, merge with existing word-overlap
-    const aiDups = (data.duplicates ?? []).map((d: { a: DupItem; b: DupItem; reason: string; score: number }) => ({
-      ...d,
-      aiConfirmed: true,
-    }))
-    setDuplicatePairs((prev) => {
-      // Remove word-overlap pairs that are now confirmed by AI (avoid duplication)
-      const aiIds = new Set(aiDups.map((d: { a: DupItem; b: DupItem }) => `${d.a.id}:${d.b.id}`))
-      const filtered = prev.filter((p) => !aiIds.has(`${p.a.id}:${p.b.id}`))
-      return [...aiDups, ...filtered]
-    })
-    setGroupSuggestions(data.groups ?? [])
-    setGroupSuggestLoading(false)
+    // Open panel immediately with loading state — brugeren ser straks at noget sker
     setAiPanelOpen(true)
+    setAiAnalysisStatus('loading')
+    setAiAnalysisMsg(null)
+    setGroupSuggestions([])
+    setDuplicatePairs((prev) => prev.filter((p) => !p.aiConfirmed))
+
+    try {
+      const res = await fetch('/api/items/analyze', { method: 'POST' })
+      if (!res.ok) {
+        let msg = `Serverfejl (${res.status})`
+        try { const d = await res.json(); msg = d.error ?? msg } catch { /* ignore */ }
+        setAiAnalysisStatus('error')
+        setAiAnalysisMsg(msg)
+        return
+      }
+
+      const data = await res.json()
+      const aiDups = (data.duplicates ?? []).map((d: { a: DupItem; b: DupItem; reason: string; score: number }) => ({
+        ...d,
+        aiConfirmed: true,
+      }))
+      setDuplicatePairs((prev) => {
+        const aiIds = new Set(aiDups.map((d: { a: DupItem; b: DupItem }) => `${d.a.id}:${d.b.id}`))
+        const filtered = prev.filter((p) => !aiIds.has(`${p.a.id}:${p.b.id}`))
+        return [...aiDups, ...filtered]
+      })
+      setGroupSuggestions(data.groups ?? [])
+
+      const totalFound = (data.duplicates?.length ?? 0) + (data.groups?.length ?? 0)
+      if (totalFound === 0) {
+        setAiAnalysisMsg('Ingen forslag fundet — din indbakke ser ryddig ud.')
+      } else {
+        setAiAnalysisMsg(null)
+      }
+      setAiAnalysisStatus('done')
+    } catch (err) {
+      setAiAnalysisStatus('error')
+      setAiAnalysisMsg(`Noget gik galt — prøv igen. (${err instanceof Error ? err.message : 'ukendt fejl'})`)
+    }
   }
 
   async function applyGroupSuggestion(label: string, item_ids: string[]) {
@@ -837,18 +858,57 @@ export default function Home() {
       )}
 
       {/* AI Sorterings-panel */}
-      {aiPanelOpen && (activeDuplicates.length > 0 || groupSuggestions.length > 0) && (
+      {aiPanelOpen && (
         <section className="ai-panel">
           <div className="ai-panel-header">
             <span className="ai-panel-title">AI Sorterings-forslag</span>
-            <button className="ai-panel-close" onClick={() => setAiPanelOpen(false)}>×</button>
+            <button className="ai-panel-close" onClick={() => { setAiPanelOpen(false); setAiAnalysisStatus('idle'); setAiAnalysisMsg(null) }}>×</button>
           </div>
 
-          {activeDuplicates.slice(0, 4).map((pair) => (
+          {/* Loading */}
+          {aiAnalysisStatus === 'loading' && (
+            <div className="ai-panel-status">
+              <span className="ai-loading-dot" />
+              <span>Analyserer din indbakke…</span>
+            </div>
+          )}
+
+          {/* Fejl */}
+          {aiAnalysisStatus === 'error' && (
+            <div className="ai-panel-status error">
+              <span>⚠ {aiAnalysisMsg}</span>
+              <button className="ai-action-btn" style={{ marginTop: 8 }} onClick={analyzeAll}>Prøv igen</button>
+            </div>
+          )}
+
+          {/* Tom state */}
+          {aiAnalysisStatus === 'done' && aiAnalysisMsg && (
+            <div className="ai-panel-status muted">{aiAnalysisMsg}</div>
+          )}
+
+          {/* Word-overlap dubletter (auto-detekteret) */}
+          {activeDuplicates.filter((p) => !p.aiConfirmed).slice(0, 2).map((pair) => (
+            <div key={`${pair.a.id}:${pair.b.id}`} className="ai-insight">
+              <div className="ai-insight-tag dup-tag">≈ Mulig dublet</div>
+              <div className="ai-insight-items">
+                <span className="ai-insight-text">"{pair.a.ai_summary || pair.a.raw_input}"</span>
+                <span className="ai-insight-sep">og</span>
+                <span className="ai-insight-text">"{pair.b.ai_summary || pair.b.raw_input}"</span>
+              </div>
+              <div className="ai-insight-actions">
+                <button className="ai-action-btn" onClick={() => dismissPair(pair.a.id, pair.b.id)}>Behold begge</button>
+                <button className="ai-action-btn danger" onClick={() => archiveFromPair(pair.a.id, pair.a.id, pair.b.id)}>Arkiver første</button>
+                <button className="ai-action-btn danger" onClick={() => archiveFromPair(pair.b.id, pair.a.id, pair.b.id)}>Arkiver andet</button>
+              </div>
+            </div>
+          ))}
+
+          {/* AI-bekræftede dubletter */}
+          {activeDuplicates.filter((p) => p.aiConfirmed).slice(0, 4).map((pair) => (
             <div key={`${pair.a.id}:${pair.b.id}`} className="ai-insight">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div className="ai-insight-tag dup-tag">≈ Mulig dublet</div>
-                {pair.aiConfirmed && <span style={{ fontSize: 9, color: '#4A6A00', letterSpacing: '0.1em' }}>AI</span>}
+                <span style={{ fontSize: 9, color: '#6A9200', letterSpacing: '0.1em', textTransform: 'uppercase' }}>AI</span>
               </div>
               <div className="ai-insight-items">
                 <span className="ai-insight-text">"{pair.a.ai_summary || pair.a.raw_input}"</span>
@@ -864,6 +924,7 @@ export default function Home() {
             </div>
           ))}
 
+          {/* Gruppe-forslag */}
           {groupSuggestions.map((s) => (
             <div key={s.label} className="ai-insight">
               <div className="ai-insight-tag group-tag">⊙ {s.label}</div>
@@ -881,22 +942,23 @@ export default function Home() {
               </div>
             </div>
           ))}
+
+          {/* Kør analyse igen når panel er åbent og done */}
+          {aiAnalysisStatus === 'done' && (
+            <button className="ai-rerun-btn" onClick={analyzeAll}>↺ Kør analyse igen</button>
+          )}
         </section>
       )}
 
-      {/* AI analyse-trigger — diskret knap */}
-      {(!aiPanelOpen || (activeDuplicates.length === 0 && groupSuggestions.length === 0)) && items.length >= 3 && activeFilter === 'alle' && (
+      {/* AI analyse-trigger — vises når panel er lukket og der er nok items */}
+      {!aiPanelOpen && items.length >= 3 && activeFilter === 'alle' && (
         <div className="ai-trigger-row">
-          <button
-            className="ai-trigger-btn"
-            onClick={analyzeAll}
-            disabled={groupSuggestLoading}
-          >
-            {groupSuggestLoading ? 'Analyserer…' : '✦ AI Analyse'}
+          <button className="ai-trigger-btn" onClick={analyzeAll}>
+            ✦ AI Analyse
           </button>
-          {activeDuplicates.length > 0 && !aiPanelOpen && (
+          {activeDuplicates.filter((p) => !p.aiConfirmed).length > 0 && (
             <button className="ai-trigger-btn dup" onClick={() => setAiPanelOpen(true)}>
-              ≈ {activeDuplicates.length} mulige dubletter
+              ≈ {activeDuplicates.filter((p) => !p.aiConfirmed).length} mulige dubletter
             </button>
           )}
         </div>
@@ -2474,6 +2536,43 @@ export default function Home() {
         .ai-trigger-btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .ai-trigger-btn.dup { border-color: rgba(255,155,60,0.2); color: rgba(255,155,60,0.6); }
         .ai-trigger-btn.dup:hover { border-color: rgba(255,155,60,0.4); color: #FF9B3C; }
+
+        .ai-panel-status {
+          font-size: 13px;
+          color: var(--text-3);
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+          padding: 4px 0;
+        }
+        .ai-panel-status.error { color: #FF6B3C; }
+        .ai-panel-status.muted { color: #4A4A4A; font-style: italic; }
+
+        .ai-loading-dot {
+          display: inline-block;
+          width: 6px;
+          height: 6px;
+          background: #4A6A00;
+          border-radius: 50%;
+          margin-right: 8px;
+          animation: pulse 1s ease-in-out infinite;
+          vertical-align: middle;
+        }
+
+        .ai-rerun-btn {
+          background: none;
+          border: none;
+          color: #2A3A00;
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.1em;
+          padding: 4px 0 0;
+          cursor: pointer;
+          touch-action: manipulation;
+          margin-top: 4px;
+          align-self: flex-start;
+        }
+        .ai-rerun-btn:hover { color: #4A6A00; }
 
         /* Mobile */
         @media (max-width: 640px) {

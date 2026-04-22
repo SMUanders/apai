@@ -27,14 +27,15 @@ function openai(): OpenAI {
 export async function complete(
   system: string,
   user: string,
-  maxTokens = 400
+  maxTokens = 400,
+  modelOverride?: string
 ): Promise<string> {
   if (PROVIDER === 'openai') return completeOpenAI(system, user, maxTokens)
-  return completeAnthropic(system, user, maxTokens)
+  return completeAnthropic(system, user, maxTokens, modelOverride)
 }
 
-async function completeAnthropic(system: string, user: string, maxTokens: number): Promise<string> {
-  const model = MODEL_OVERRIDE ?? DEFAULT_MODEL.anthropic
+async function completeAnthropic(system: string, user: string, maxTokens: number, modelOverride?: string): Promise<string> {
+  const model = modelOverride ?? MODEL_OVERRIDE ?? DEFAULT_MODEL.anthropic
   const message = await anthropic().messages.create({
     model,
     max_tokens: maxTokens,

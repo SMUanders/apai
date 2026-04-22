@@ -2,19 +2,31 @@ import { NextResponse } from 'next/server'
 import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
-const SYSTEM = `Du finder sammenhængende opgaver i en dansk opgaveliste.
+const SYSTEM = `Du finder items der hører til præcis samme sag i en dansk opgaveliste.
 
-Returner UDELUKKENDE et JSON-array:
-[{"label":"2-4 ord dansk sagsnavn","item_ids":["id1","id2"],"reasoning":"én sætning"}]
+Returner KUN JSON-array — [] hvis ingen sikre fund:
+[{"label":"konkret sagsnavn 2-4 ord","item_ids":["id1","id2"],"reasoning":"én sætning"}]
 
-Regler:
-- Kun grupper med minimum 2 items der tydeligt tilhører samme projekt/sag
-- Vær konservativ: hellere 0 forslag end tvivlsomme
-- Ignorer items med group_label
-- Max 5 grupper
-- Returner [] hvis ingen oplagte grupper
+EN SAG kræver at items deler ÉT af disse:
+  - samme konkrete objekt (bestemt bil, maskine, dokument, kontrakt)
+  - samme navngiven person eller virksomhed
+  - samme afgrænsede projekt med et navn
+  - samme fysiske sted der kræver opsøgning
+  - samme specifikke ærinde der naturligt løses på én gang
 
-Kun JSON-array.`
+FORESLÅ ALDRIG sag blot fordi items:
+  - begge er praktiske, private eller administrative
+  - begge handler om "arbejde", "hjem" eller "bil" generelt
+  - emnemæssigt minder om hinanden uden fælles konkret handling
+  - er løst beslægtede temaer
+
+TEST: "Ville en normal person spontant lægge disse i samme navngivne mappe?" Nej → returner ikke forslaget.
+
+SAGSNAVN — konkret og menneskelig:
+  Godt: "Polestar service", "Kontrakt med Mads", "Sommerhus april"
+  Dårligt: "Praktiske opgaver", "Arbejdsrelateret", "Bil og transport"
+
+Ignorer items med group_label. Max 3 forslag. Tvivl → udelad. Kun JSON-array.`
 
 export async function POST() {
   const { data: items, error } = await supabase

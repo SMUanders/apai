@@ -7,18 +7,19 @@ const MAX_ITEMS = 25
 const MAX_TOKENS = 600
 
 const SYSTEM = `Analysér en dansk opgaveliste. Returner UDELUKKENDE dette JSON-objekt:
-{"duplicates":[{"a_id":"id","b_id":"id","reason":"én dansk sætning"}],"groups":[{"label":"2-4 ord","item_ids":["id","id"],"reasoning":"én dansk sætning"}]}
+{"duplicates":[{"a_id":"id","b_id":"id","reason":"én dansk sætning"}],"groups":[{"label":"konkret sagsnavn 2-4 ord","item_ids":["id","id"],"reasoning":"én dansk sætning"}]}
 
-DUBLETTER — kun hvis du er helt sikker:
-- Samme konkrete handling beskrevet med forskellige ord
-- Aldrig: samme emne men forskellig handling, eller generelt vs. specifikt
+DUBLETTER — kun hvis identisk handling med andre ord:
+- Samme konkrete ærinde, blot formuleret forskelligt
+- Aldrig: samme emne men forskellig handling
 - Max 3 par
 
-GRUPPER — kun oplagte projektsammenhænge:
-- Min 2 items der tydeligt tilhører samme sag/projekt/opgave
-- Ignorer items der allerede har group_label
-- Max 4 grupper
-- Vær konservativ: hellere ingen forslag end tvivlsomme
+GRUPPER — kun når items deler ÉT konkret fællestræk:
+  Tilladt: samme navngiven person/virksomhed · samme specifikke objekt · samme afgrænsede projekt · samme sted der kræves opsøgt
+  Forbudt: begge praktiske · begge private · begge arbejdsrelaterede · løst samme tema
+  Test: "Ville en normal person spontant lægge disse i samme navngivne mappe?" Nej → foreslå ikke.
+  Sagsnavn: konkret ("Polestar service", "Kontrakt med Mads") — ikke generisk ("Praktiske opgaver")
+  Ignorer items med group_label. Max 3 grupper. Tvivl → udelad.
 
 Returner {"duplicates":[],"groups":[]} hvis ingen sikre fund. Kun JSON.`
 

@@ -121,9 +121,13 @@ export default function Home() {
   // Briefing modal
   const [briefOpen, setBriefOpen] = useState(false)
   // Group suggestions
-  const [groupSuggestOpen, setGroupSuggestOpen] = useState(false)
   const [groupSuggestions, setGroupSuggestions] = useState<{ label: string; item_ids: string[]; reasoning: string }[]>([])
   const [groupSuggestLoading, setGroupSuggestLoading] = useState(false)
+  // Duplicate detection
+  type DupItem = { id: string; ai_summary: string | null; raw_input: string }
+  const [duplicatePairs, setDuplicatePairs] = useState<{ a: DupItem; b: DupItem; score: number }[]>([])
+  const [dismissedPairs, setDismissedPairs] = useState<Set<string>>(new Set())
+  const [aiPanelOpen, setAiPanelOpen] = useState(true)
   // Speech
   const [speaking, setSpeaking] = useState(false)
 
@@ -139,6 +143,7 @@ export default function Home() {
     fetchItems()
     fetchBacklog()
     fetchHistory()
+    fetchDuplicates()
     if (window.innerWidth > 768) {
       textareaRef.current?.focus()
     }
@@ -154,6 +159,13 @@ export default function Home() {
     const data = await res.json()
     setItems(Array.isArray(data) ? data : [])
     setLoading(false)
+  }
+
+  async function fetchDuplicates() {
+    const res = await fetch('/api/items/find-duplicates')
+    if (!res.ok) return
+    const data = await res.json()
+    setDuplicatePairs(data.pairs ?? [])
   }
 
   async function fetchContextItems(ctx: ContextTrigger) {
@@ -400,12 +412,24 @@ export default function Home() {
     const data = await res.json()
     setGroupSuggestions(data.suggestions ?? [])
     setGroupSuggestLoading(false)
-    setGroupSuggestOpen(true)
+    setAiPanelOpen(true)
   }
 
   async function applyGroupSuggestion(label: string, item_ids: string[]) {
     await Promise.all(item_ids.map((id) => handleGroupUpdate(id, label)))
     setGroupSuggestions((prev) => prev.filter((s) => s.label !== label))
+  }
+
+  function dismissPair(aId: string, bId: string) {
+    setDismissedPairs((prev) => new Set(Array.from(prev).concat(`${aId}:${bId}`)))
+  }
+
+  async function archiveFromPair(idToArchive: string, aId: string, bId: string) {
+    await archive(idToArchive)
+    dismissPair(aId, bId)
+    setDuplicatePairs((prev) =>
+      prev.filter((p) => !(p.a.id === aId && p.b.id === bId))
+    )
   }
 
   async function moveToInbox(id: string) {
@@ -631,6 +655,11 @@ export default function Home() {
     [items]
   )
 
+  const activeDuplicates = useMemo(
+    () => duplicatePairs.filter((p) => !dismissedPairs.has(`${p.a.id}:${p.b.id}`)),
+    [duplicatePairs, dismissedPairs]
+  )
+
   const isFiltered =
     activeFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
 
@@ -793,6 +822,68 @@ export default function Home() {
         </div>
       )}
 
+      {/* AI Sorterings-panel */}
+      {aiPanelOpen && (activeDuplicates.length > 0 || groupSuggestions.length > 0) && (
+        <section className="ai-panel">
+          <div className="ai-panel-header">
+            <span className="ai-panel-title">AI Sorterings-forslag</span>
+            <button className="ai-panel-close" onClick={() => setAiPanelOpen(false)}>×</button>
+          </div>
+
+          {activeDuplicates.slice(0, 3).map((pair) => (
+            <div key={`${pair.a.id}:${pair.b.id}`} className="ai-insight">
+              <div className="ai-insight-tag dup-tag">≈ Mulig dublet</div>
+              <div className="ai-insight-items">
+                <span className="ai-insight-text">"{pair.a.ai_summary || pair.a.raw_input}"</span>
+                <span className="ai-insight-sep">og</span>
+                <span className="ai-insight-text">"{pair.b.ai_summary || pair.b.raw_input}"</span>
+              </div>
+              <div className="ai-insight-actions">
+                <button className="ai-action-btn" onClick={() => dismissPair(pair.a.id, pair.b.id)}>Behold begge</button>
+                <button className="ai-action-btn danger" onClick={() => archiveFromPair(pair.a.id, pair.a.id, pair.b.id)}>Arkiver første</button>
+                <button className="ai-action-btn danger" onClick={() => archiveFromPair(pair.b.id, pair.a.id, pair.b.id)}>Arkiver andet</button>
+              </div>
+            </div>
+          ))}
+
+          {groupSuggestions.map((s) => (
+            <div key={s.label} className="ai-insight">
+              <div className="ai-insight-tag group-tag">⊙ {s.label}</div>
+              <div className="ai-insight-items">
+                {s.item_ids.slice(0, 3).map((id) => {
+                  const it = items.find((i) => i.id === id)
+                  return it ? <span key={id} className="ai-insight-text">· {it.ai_summary || it.raw_input}</span> : null
+                })}
+                {s.item_ids.length > 3 && <span className="ai-insight-text" style={{ color: '#555' }}>+ {s.item_ids.length - 3} mere</span>}
+              </div>
+              <div className="ai-insight-subtext">{s.reasoning}</div>
+              <div className="ai-insight-actions">
+                <button className="ai-action-btn accent" onClick={() => applyGroupSuggestion(s.label, s.item_ids)}>Opret sag</button>
+                <button className="ai-action-btn" onClick={() => setGroupSuggestions((prev) => prev.filter((g) => g.label !== s.label))}>Ignorer</button>
+              </div>
+            </div>
+          ))}
+        </section>
+      )}
+
+      {/* Foreslå sager — knap, vises diskret når panel er tomt/lukket */}
+      {(!aiPanelOpen || (activeDuplicates.length === 0 && groupSuggestions.length === 0)) && items.length >= 3 && activeFilter === 'alle' && (
+        <div className="ai-trigger-row">
+          <button
+            className="ai-trigger-btn"
+            onClick={suggestGroups}
+            disabled={groupSuggestLoading}
+          >
+            {groupSuggestLoading ? 'Analyserer…' : '✦ Foreslå sager'}
+          </button>
+          {activeDuplicates.length > 0 && !aiPanelOpen && (
+            <button className="ai-trigger-btn dup" onClick={() => setAiPanelOpen(true)}>
+              ≈ {activeDuplicates.length} mulige dubletter
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Top 3 — kun ved default visning */}
       {!isFiltered && top3.length > 0 && (
         <section className="priority-section">
@@ -818,22 +909,11 @@ export default function Home() {
       {(isFiltered ? filteredItems : rest).length > 0 && (
         <section className="inbox-section">
           {isFiltered ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 className="section-label">
-                {searchQuery.trim()
-                  ? `"${searchQuery}" · ${filteredItems.length}`
-                  : `${FILTERS.find((f) => f.id === activeFilter)?.label ?? 'Indbakke'} · ${filteredItems.length}`}
-              </h2>
-              {activeFilter === 'sager' && (
-                <button
-                  onClick={suggestGroups}
-                  disabled={groupSuggestLoading}
-                  style={{ background: 'none', border: 'none', color: '#555', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', letterSpacing: '0.06em' }}
-                >
-                  {groupSuggestLoading ? 'analyserer…' : '+ foreslå'}
-                </button>
-              )}
-            </div>
+            <h2 className="section-label">
+              {searchQuery.trim()
+                ? `"${searchQuery}" · ${filteredItems.length}`
+                : `${FILTERS.find((f) => f.id === activeFilter)?.label ?? 'Indbakke'} · ${filteredItems.length}`}
+            </h2>
           ) : (
             <h2 className="section-label">Indbakke</h2>
           )}
@@ -1011,42 +1091,6 @@ export default function Home() {
 
       {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
-
-      {/* Group suggestions modal */}
-      {groupSuggestOpen && (
-        <div className="modal-overlay" onClick={() => setGroupSuggestOpen(false)}>
-          <div className="modal-box" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <span style={{ fontSize: 11, letterSpacing: '0.3em', textTransform: 'uppercase', color: '#727272' }}>Foreslåede sager</span>
-              <button onClick={() => setGroupSuggestOpen(false)} style={{ background: 'none', border: 'none', color: '#555', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
-            </div>
-            {groupSuggestions.length === 0 ? (
-              <div style={{ fontSize: 13, color: '#555', padding: '8px 0' }}>Ingen oplagte grupper fundet.</div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {groupSuggestions.map((s) => (
-                  <div key={s.label} style={{ background: '#111', border: '1px solid #262626', borderRadius: 8, padding: '14px 16px' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#F0F0F0', marginBottom: 6 }}>{s.label}</div>
-                    <div style={{ fontSize: 12, color: '#555', marginBottom: 10 }}>{s.reasoning}</div>
-                    <div style={{ fontSize: 11, color: '#727272', marginBottom: 12 }}>
-                      {s.item_ids.map((id) => {
-                        const item = items.find((i) => i.id === id)
-                        return item ? <div key={id} style={{ padding: '2px 0' }}>· {item.ai_summary || item.raw_input}</div> : null
-                      })}
-                    </div>
-                    <button
-                      onClick={() => applyGroupSuggestion(s.label, s.item_ids)}
-                      style={{ background: '#E8FF3C', border: 'none', borderRadius: 6, color: '#080808', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, padding: '8px 16px', cursor: 'pointer', touchAction: 'manipulation' }}
-                    >
-                      Opret sag
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Duplikat-advarsel */}
       {duplicate && (
@@ -2263,6 +2307,155 @@ export default function Home() {
 
         /* Bottom dock — fjernet */
         .bottom-dock { display: none; }
+
+        /* AI Sorterings-panel */
+        .ai-panel {
+          background: #0D0D0D;
+          border: 1px solid #1E2800;
+          border-radius: var(--radius);
+          padding: 14px 16px;
+          margin-bottom: 20px;
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .ai-panel-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+
+        .ai-panel-title {
+          font-size: 9px;
+          letter-spacing: 0.3em;
+          text-transform: uppercase;
+          color: #4A6A00;
+          font-weight: 700;
+        }
+
+        .ai-panel-close {
+          background: none;
+          border: none;
+          color: #3A3A3A;
+          font-size: 16px;
+          cursor: pointer;
+          line-height: 1;
+          padding: 0;
+          touch-action: manipulation;
+        }
+
+        .ai-panel-close:hover { color: #555; }
+
+        .ai-insight {
+          border-top: 1px solid #1A1A1A;
+          padding-top: 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .ai-insight-tag {
+          font-size: 9px;
+          letter-spacing: 0.15em;
+          text-transform: uppercase;
+          font-weight: 700;
+          padding: 2px 6px;
+          border-radius: 4px;
+          display: inline-block;
+          width: fit-content;
+        }
+
+        .dup-tag {
+          color: #FF9B3C;
+          background: rgba(255,155,60,0.1);
+          border: 1px solid rgba(255,155,60,0.2);
+        }
+
+        .group-tag {
+          color: #E8FF3C;
+          background: rgba(232,255,60,0.06);
+          border: 1px solid rgba(232,255,60,0.15);
+        }
+
+        .ai-insight-items {
+          display: flex;
+          flex-direction: column;
+          gap: 2px;
+        }
+
+        .ai-insight-text {
+          font-size: 13px;
+          color: var(--text-2);
+          line-height: 1.5;
+        }
+
+        .ai-insight-sep {
+          font-size: 10px;
+          color: var(--text-3);
+          letter-spacing: 0.1em;
+          padding: 0 2px;
+        }
+
+        .ai-insight-subtext {
+          font-size: 11px;
+          color: var(--text-3);
+          font-style: italic;
+        }
+
+        .ai-insight-actions {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          margin-top: 4px;
+        }
+
+        .ai-action-btn {
+          background: none;
+          border: 1px solid #262626;
+          border-radius: var(--radius-sm);
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 11px;
+          padding: 6px 10px;
+          cursor: pointer;
+          transition: all 0.1s;
+          white-space: nowrap;
+          touch-action: manipulation;
+        }
+
+        .ai-action-btn:hover { border-color: #3A3A3A; color: var(--text-2); }
+        .ai-action-btn.accent { border-color: rgba(232,255,60,0.3); color: #E8FF3C; }
+        .ai-action-btn.accent:hover { background: rgba(232,255,60,0.07); }
+        .ai-action-btn.danger { border-color: rgba(255,107,60,0.2); color: #FF6B3C; }
+        .ai-action-btn.danger:hover { background: rgba(255,107,60,0.07); }
+
+        /* Trigger row */
+        .ai-trigger-row {
+          display: flex;
+          gap: 8px;
+          margin-bottom: 20px;
+          flex-wrap: wrap;
+        }
+
+        .ai-trigger-btn {
+          background: none;
+          border: 1px solid #1E2800;
+          border-radius: 20px;
+          color: #4A6A00;
+          font-family: inherit;
+          font-size: 11px;
+          letter-spacing: 0.06em;
+          padding: 6px 14px;
+          cursor: pointer;
+          transition: all 0.15s;
+          touch-action: manipulation;
+        }
+
+        .ai-trigger-btn:hover { border-color: #3A5000; color: #6A9200; }
+        .ai-trigger-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ai-trigger-btn.dup { border-color: rgba(255,155,60,0.2); color: rgba(255,155,60,0.6); }
+        .ai-trigger-btn.dup:hover { border-color: rgba(255,155,60,0.4); color: #FF9B3C; }
 
         /* Mobile */
         @media (max-width: 640px) {

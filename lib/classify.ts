@@ -11,6 +11,7 @@ export interface Classification {
   context: string | null
   context_trigger: ContextTrigger | null
   priority: number
+  due_at: string | null
 }
 
 const SYSTEM_PROMPT = `Du er en klassificeringsmotor for et personligt hukommelsessystem kaldet APAI.
@@ -25,7 +26,8 @@ JSON-format:
   "summary": "kort omskrivning på dansk (max 10 ord)",
   "context": "hvornår/hvor relevant, fx 'når du kommer hjem' — eller null",
   "context_trigger": "home" | "work" | "leaving" | "morning" | "evening" | "anytime" | null,
-  "priority": 1-5
+  "priority": 1-5,
+  "due_at": "ISO 8601 timestamp hvis teksten nævner en konkret dato eller tid — ellers null. Brug referencedatoen til at beregne relative udtryk som 'på lørdag', 'kl 14', 'i morgen tidlig', 'om 3 dage', 'næste uge'. Hvis kun tidspunkt er nævnt uden dato, brug referencedatoen. Returner altid UTC."
 }
 
 Typedefinitioner:
@@ -55,11 +57,13 @@ Prioritet:
 Vær kort. Vær præcis. Kun JSON.`
 
 export async function classifyInput(rawInput: string): Promise<Classification> {
+  const referenceDate = new Date().toISOString()
+
   const message = await client.messages.create({
     model: 'claude-sonnet-4-20250514',
-    max_tokens: 300,
+    max_tokens: 400,
     system: SYSTEM_PROMPT,
-    messages: [{ role: 'user', content: rawInput }],
+    messages: [{ role: 'user', content: `[Referencedato: ${referenceDate}]\n\n${rawInput}` }],
   })
 
   const text = message.content
@@ -76,5 +80,6 @@ export async function classifyInput(rawInput: string): Promise<Classification> {
     context: parsed.context || null,
     context_trigger: parsed.context_trigger || null,
     priority: Number(parsed.priority),
+    due_at: parsed.due_at || null,
   }
 }

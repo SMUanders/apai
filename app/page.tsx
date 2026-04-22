@@ -61,7 +61,8 @@ function formatDueAt(due_at: string): string {
   const nowDay = new Date(now.getFullYear(), now.getMonth(), now.getDate())
   const dueDay = new Date(due.getFullYear(), due.getMonth(), due.getDate())
   const diffDays = Math.round((dueDay.getTime() - nowDay.getTime()) / 86400000)
-  const hasTime = due.getHours() !== 0 || due.getMinutes() !== 0
+  // Use UTC hours to detect "no specific time" (AI stores time-less dates as T00:00:00Z)
+  const hasTime = due.getUTCHours() !== 0 || due.getUTCMinutes() !== 0
   const timeStr = hasTime
     ? ' ' + due.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
     : ''
@@ -70,10 +71,15 @@ function formatDueAt(due_at: string): string {
   if (diffDays === 1) return `I morgen${timeStr}`
   if (diffDays === -1) return `I går${timeStr}`
   if (diffDays > 1 && diffDays < 7) return `Om ${diffDays} dage${timeStr}`
+  if (diffDays === -2) return `I forgårs`
   if (diffDays < 0 && diffDays > -7) return `${Math.abs(diffDays)} dage siden`
   return (
     due.toLocaleDateString('da-DK', { weekday: 'long', day: 'numeric', month: 'short' }) + timeStr
   )
+}
+
+function isDuePast(due_at: string): boolean {
+  return new Date(due_at) < new Date()
 }
 
 const FILTERS = [
@@ -821,7 +827,7 @@ export default function Home() {
               {item.ai_summary && item.ai_summary !== '...' ? item.ai_summary : item.raw_input}
             </div>
             {item.due_at && (
-              <div className="item-due" style={{ marginTop: 8, display: 'inline-block' }}>
+              <div className={isDuePast(item.due_at) ? 'item-due-overdue' : 'item-due'} style={{ marginTop: 8, display: 'inline-block' }}>
                 {formatDueAt(item.due_at)}
               </div>
             )}
@@ -1966,6 +1972,15 @@ export default function Home() {
           padding: 2px 6px;
         }
 
+        .item-due-overdue {
+          font-size: 11px;
+          color: #FF6B3C;
+          letter-spacing: 0.03em;
+          border: 1px solid rgba(255,107,60,0.4);
+          border-radius: 4px;
+          padding: 2px 6px;
+        }
+
         .item-priority {
           font-size: 11px;
           color: var(--text-3);
@@ -2971,7 +2986,7 @@ function ItemCard({
           {item.ai_context && !item.ai_context.startsWith('todoist:') && item.ai_context !== '__review__' && item.ai_context !== 'pdf_import' && item.ai_context !== 'bulk_import' && (
             <span className="item-context">↳ {item.ai_context}</span>
           )}
-          {item.due_at && <span className="item-due">{formatDueAt(item.due_at)}</span>}
+          {item.due_at && <span className={isDuePast(item.due_at) ? 'item-due-overdue' : 'item-due'}>{formatDueAt(item.due_at)}</span>}
           <span className="item-priority">{PRIORITY_DOT(item.ai_priority)}</span>
           {(item.ai_type === 'none' || item.ai_context === '__review__') && (
             <span className="review-badge">til review</span>

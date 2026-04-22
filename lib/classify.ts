@@ -25,7 +25,7 @@ JSON-format:
   "context": "hvornår/hvor relevant, fx 'når du kommer hjem' — eller null",
   "context_trigger": "home" | "work" | "leaving" | "morning" | "evening" | "anytime" | null,
   "priority": 1-5,
-  "due_at": "ISO 8601 timestamp hvis teksten nævner en konkret dato eller tid — ellers null. Brug referencedatoen til at beregne relative udtryk som 'på lørdag', 'kl 14', 'i morgen tidlig', 'om 3 dage', 'næste uge'. Returner altid UTC.",
+  "due_at": "ISO 8601 UTC timestamp — eller null. Regler: (1) Konverter brugerens lokale tid til UTC via UTC-offset i referencetidspunktet. (2) Ingen specifik tid nævnt → brug T00:00:00Z. (3) 'næste uge' → mandag næste uge T00:00:00Z. (4) 'på onsdag' / 'på fredag' → kommende hverdag med det navn. (5) Vage udtryk som 'snart', 'engang', 'når jeg kommer hjem' → null (brug context_trigger i stedet).",
   "confident": true/false,
   "area": "smu" | "gca" | "privat" | "familie" | "andet"
 }
@@ -67,11 +67,27 @@ Prioritet:
 
 Vær kort. Vær præcis. Kun JSON.`
 
+function copenhagenRef(now: Date): string {
+  const localStr = now.toLocaleDateString('da-DK', {
+    timeZone: 'Europe/Copenhagen',
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+  })
+  const timeStr = now.toLocaleTimeString('da-DK', {
+    timeZone: 'Europe/Copenhagen',
+    hour: '2-digit', minute: '2-digit',
+  })
+  const offsetPart =
+    new Intl.DateTimeFormat('en', { timeZone: 'Europe/Copenhagen', timeZoneName: 'shortOffset' })
+      .formatToParts(now)
+      .find((p) => p.type === 'timeZoneName')?.value ?? 'GMT+2'
+  return `${localStr} kl. ${timeStr} (${offsetPart})`
+}
+
 export async function classifyInput(rawInput: string): Promise<Classification> {
-  const referenceDate = new Date().toISOString()
+  const ref = copenhagenRef(new Date())
   const text = await complete(
     SYSTEM_PROMPT,
-    `[Referencedato: ${referenceDate}]\n\n${rawInput}`,
+    `[Referencetidspunkt: ${ref}]\n\n${rawInput}`,
     450
   )
 

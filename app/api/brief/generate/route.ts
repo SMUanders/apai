@@ -35,7 +35,7 @@ ${BRIEF_PROMPT[type]}
 Stil: rolig, menneskelig, ingen bullet points — løbende tekst. Max 60 ord.`
 
   const stream = await client.messages.stream({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 150,
     system: systemPrompt,
     messages: [{ role: 'user', content: `Indbakke:\n${itemList || '(tom)'}` }],

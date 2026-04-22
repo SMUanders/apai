@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     .join('\n')
 
   const message = await client.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 500,
     system: `Du er APAI, et personligt AI-hukommelsessystem. Brugeren spørger om sine gemte items.
 Svar på dansk — præcist og kort, max 3 sætninger.

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { classifyInput } from '@/lib/classify'
 
 // GET /api/items — hent alle inbox-items, sorteret efter prioritet

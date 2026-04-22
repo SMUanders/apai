@@ -17,7 +17,7 @@
         "npm:@types/node@20",
         "npm:@types/react@18",
         "npm:autoprefixer@10",
-        "npm:canvas@^3.2.2",
+        "npm:lucide-react@^1.7.0",
         "npm:next@14.2.3",
         "npm:postcss@8",
         "npm:react-dom@18",

@@ -110,6 +110,9 @@ export default function Home() {
   const [askQuery, setAskQuery] = useState('')
   const [askLoading, setAskLoading] = useState(false)
   const [askResult, setAskResult] = useState<{ answer: string; items: Item[] } | null>(null)
+  // Historik
+  const [historyItems, setHistoryItems] = useState<Item[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
   // Speech
   const [speaking, setSpeaking] = useState(false)
 
@@ -124,6 +127,7 @@ export default function Home() {
   useEffect(() => {
     fetchItems()
     fetchBacklog()
+    fetchHistory()
     if (window.innerWidth > 768) {
       textareaRef.current?.focus()
     }
@@ -318,6 +322,12 @@ export default function Home() {
     const res = await fetch('/api/items/backlog')
     const data = await res.json()
     setBacklogItems(Array.isArray(data) ? data : [])
+  }
+
+  async function fetchHistory() {
+    const res = await fetch('/api/items/history')
+    const data = await res.json()
+    setHistoryItems(Array.isArray(data) ? data : [])
   }
 
   async function markDone(id: string) {
@@ -754,6 +764,43 @@ export default function Home() {
                   onBacklog={moveToInbox}
                   isBacklog
                 />
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Historik */}
+      {historyItems.length > 0 && (
+        <section className="backlog-section">
+          <button className="backlog-toggle" onClick={() => setHistoryOpen((o) => !o)}>
+            <span>Historik</span>
+            <span className="backlog-count">
+              {historyItems.length} {historyOpen ? '▲' : '▼'}
+            </span>
+          </button>
+          {historyOpen && (
+            <div className="item-list" style={{ marginTop: 8 }}>
+              {historyItems.map((item) => (
+                <div key={item.id} className="item-card" style={{ opacity: 0.6 }}>
+                  <div>
+                    <div className="item-summary">{item.ai_summary || item.raw_input}</div>
+                    <div className="item-meta">
+                      <span
+                        className="item-type"
+                        style={{
+                          background: (TYPE_COLORS[item.ai_type] || '#555') + '20',
+                          color: TYPE_COLORS[item.ai_type] || '#555',
+                        }}
+                      >
+                        {TYPE_LABELS[item.ai_type] || 'Ukendt'}
+                      </span>
+                      <span className="item-priority" style={{ color: item.status === 'done' ? '#4CAF50' : '#555' }}>
+                        {item.status === 'done' ? '✓ Færdig' : 'Arkiveret'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           )}

@@ -18,10 +18,18 @@ const TYPE_COLORS: Record<string, string> = {
   reminder: '#3CDFFF', someday: '#C4B5FD', none: '#666666',
 }
 
+interface ImportResult {
+  found: number
+  imported: number
+  skipped: number
+  errors?: string[]
+}
+
 export default function Settings() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [toast, setToast] = useState('')
   const [loading, setLoading] = useState<string | null>(null)
+  const [importResult, setImportResult] = useState<ImportResult | null>(null)
 
   useEffect(() => { loadStats() }, [])
 
@@ -45,6 +53,20 @@ export default function Settings() {
     else if (data.archived !== undefined) showToast(`${data.archived} arkiveret, ${data.deleted} slettet`)
     else if (data.changes !== undefined) showToast(`${data.changes.length} items justeret`)
     await loadStats()
+  }
+
+  async function importTodoist() {
+    setLoading('todoist')
+    setImportResult(null)
+    const res = await fetch('/api/items/import/todoist', { method: 'POST' })
+    const data = await res.json()
+    setLoading(null)
+    if (data.error) {
+      showToast(`Fejl: ${data.error}`)
+    } else {
+      setImportResult(data)
+      await loadStats()
+    }
   }
 
   const maxCount = stats ? Math.max(...Object.values(stats.byType), 1) : 1
@@ -103,6 +125,60 @@ export default function Settings() {
               </button>
             ))}
           </div>
+        </section>
+
+        <section style={{ marginBottom: 40 }}>
+          <h2 style={{
+            fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase',
+            color: '#727272', marginBottom: 16, fontWeight: 400,
+          }}>
+            Import
+          </h2>
+          <button
+            onClick={importTodoist}
+            disabled={loading === 'todoist'}
+            style={{
+              background: 'none',
+              border: '1px solid #262626',
+              borderRadius: 8,
+              color: loading === 'todoist' ? '#4A4A4A' : '#A2A2A2',
+              fontFamily: 'inherit',
+              fontSize: 14,
+              padding: '14px 18px',
+              cursor: 'pointer',
+              textAlign: 'left',
+              width: '100%',
+              transition: 'border-color 0.15s, color 0.15s',
+              touchAction: 'manipulation',
+            }}
+          >
+            {loading === 'todoist' ? 'Importerer…' : 'Importer fra Todoist'}
+          </button>
+          {importResult && (
+            <div style={{
+              marginTop: 12,
+              padding: '14px 16px',
+              background: '#111',
+              border: '1px solid #262626',
+              borderRadius: 8,
+              fontSize: 13,
+              color: '#A2A2A2',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 6,
+            }}>
+              <div style={{ display: 'flex', gap: 24 }}>
+                <span><span style={{ color: '#F0F0F0', fontWeight: 700 }}>{importResult.found}</span> fundet</span>
+                <span><span style={{ color: '#E8FF3C', fontWeight: 700 }}>{importResult.imported}</span> importeret</span>
+                <span><span style={{ color: '#727272', fontWeight: 700 }}>{importResult.skipped}</span> sprunget over</span>
+              </div>
+              {importResult.errors && importResult.errors.length > 0 && (
+                <div style={{ color: '#FF6B6B', fontSize: 12 }}>
+                  {importResult.errors.length} fejl
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         {stats && (

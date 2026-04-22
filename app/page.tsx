@@ -315,6 +315,7 @@ export default function Home() {
     }
 
     setItems((prev) => prev.map((i) => (i.id === optimisticId ? data : i)))
+    showToast('✓ Gemt')
     setClassifying(false)
   }
 
@@ -807,28 +808,6 @@ export default function Home() {
         </section>
       )}
 
-      {/* Kontekst-vælger */}
-      <div className="context-picker">
-        {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
-          <button
-            key={ctx}
-            className={`context-pick-btn ${currentContext === ctx ? 'active' : ''}`}
-            onClick={() => handleContextSelect(ctx)}
-          >
-            {CONTEXT_META[ctx].icon}
-          </button>
-        ))}
-      </div>
-
-      {/* Reklassificér */}
-      <div className="reclassify-row">
-        <button className="reclassify-btn" onClick={handleReclassify} disabled={reclassifying}>
-          {reclassifying ? 'Opdaterer…' : 'Opdatér klassificering'}
-        </button>
-        {reclassifyResult !== null && (
-          <span className="reclassify-result">{reclassifyResult} opdateret</span>
-        )}
-      </div>
 
       {/* Brief */}
       <section className="brief-section">
@@ -880,24 +859,6 @@ export default function Home() {
         )}
       </section>
 
-      {/* Bottom dock — mobile only */}
-      <nav className="bottom-dock">
-        <div className="dock-context">
-          {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
-            <button
-              key={ctx}
-              className={`dock-ctx-btn ${currentContext === ctx ? 'active' : ''}`}
-              onClick={() => handleContextSelect(ctx)}
-              aria-label={CONTEXT_META[ctx].label}
-            >
-              {CONTEXT_META[ctx].icon}
-            </button>
-          ))}
-        </div>
-        <Link href="/settings" className="dock-settings-btn" title="Indstillinger">
-          <Settings size={20} />
-        </Link>
-      </nav>
 
       {/* Toast */}
       {toast && <div className="toast">{toast}</div>}
@@ -1467,57 +1428,7 @@ export default function Home() {
           white-space: pre-line;
         }
 
-        .context-picker {
-          display: flex;
-          gap: 8px;
-          justify-content: center;
-          margin-top: 32px;
-          padding-top: 24px;
-          border-top: 1px solid var(--border);
-        }
-
-        .context-pick-btn {
-          background: none;
-          border: 1px solid var(--border);
-          border-radius: var(--radius-sm);
-          padding: 10px 16px;
-          font-size: 20px;
-          font-family: inherit;
-          cursor: pointer;
-          transition: all 0.15s;
-          touch-action: manipulation;
-        }
-
-        .context-pick-btn:hover { border-color: var(--border-2); }
-        .context-pick-btn.active { border-color: var(--accent); background: var(--accent-bg); }
-
-        .reclassify-row {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          justify-content: center;
-          margin-top: 14px;
-        }
-
-        .reclassify-btn {
-          background: none;
-          border: none;
-          color: var(--text-3);
-          font-family: inherit;
-          font-size: 11px;
-          cursor: pointer;
-          letter-spacing: 0.05em;
-          transition: color 0.15s;
-          padding: 8px 0;
-        }
-
-        .reclassify-btn:hover { color: var(--text-2); }
-        .reclassify-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        .reclassify-result {
-          font-size: 11px;
-          color: var(--accent);
-        }
+        .context-picker { display: none; }
 
         .backlog-section {
           margin-top: 32px;
@@ -1849,59 +1760,24 @@ export default function Home() {
           text-transform: uppercase;
         }
 
-        /* Bottom dock */
-        .bottom-dock {
-          display: none;
-        }
-
-        .dock-context {
-          display: flex;
-          gap: 4px;
-        }
-
-        .dock-ctx-btn {
-          background: none;
-          border: 1.5px solid transparent;
-          border-radius: 8px;
-          padding: 8px 12px;
-          font-size: 22px;
-          cursor: pointer;
-          transition: all 0.15s;
-          touch-action: manipulation;
-          line-height: 1;
-        }
-
-        .dock-ctx-btn:hover { background: var(--surface-2); }
-        .dock-ctx-btn.active { border-color: var(--accent); background: var(--accent-bg); }
-
-        .dock-settings-btn {
-          color: var(--text-3);
-          text-decoration: none;
-          display: flex;
-          align-items: center;
-          padding: 8px 4px 8px 12px;
-          border-radius: 8px;
-          transition: all 0.15s;
-        }
-
-        .dock-settings-btn:hover { color: var(--text-1); background: var(--surface-2); }
+        /* Bottom dock — fjernet */
+        .bottom-dock { display: none; }
 
         /* Mobile */
         @media (max-width: 640px) {
           .apai-root {
-            padding: 20px 14px 140px;
+            padding: 20px 14px 60px;
           }
 
           .capture-input {
             font-size: 17px;
-            min-height: 130px;
+            min-height: 120px;
             padding: 16px 72px 16px 16px;
           }
 
           .mic-btn {
-            width: 58px;
-            height: 58px;
-            font-size: 24px;
+            width: 54px;
+            height: 54px;
             bottom: 12px;
             right: 12px;
           }
@@ -1916,35 +1792,22 @@ export default function Home() {
           .capture-footer { justify-content: stretch; }
           .capture-hint { display: none; }
 
-          .item-card { padding: 14px; }
+          .sort-row { display: none; }
 
-          .item-actions {
-            gap: 6px;
-          }
+          .item-card { padding: 14px; }
 
           .action-btn {
             font-size: 12px;
-            padding: 9px 8px;
+            padding: 10px 8px;
           }
 
-          .bottom-dock {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: fixed;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: var(--surface);
-            border-top: 1px solid var(--border);
-            padding: 10px 20px;
-            padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
-            z-index: 100;
+          .action-btn.backlog-btn { display: none; }
+
+          .toast {
+            bottom: 24px;
+            font-size: 14px;
+            padding: 14px 28px;
           }
-
-          .context-picker { display: none; }
-
-          .toast { bottom: 100px; }
         }
       `}</style>
     </main>
@@ -2040,7 +1903,7 @@ function ItemCard({
             Færdig
           </button>
           {!isBacklog && onBacklog && (
-            <button className="action-btn" onClick={() => onBacklog(item.id)}>
+            <button className="action-btn backlog-btn" onClick={() => onBacklog(item.id)}>
               Backlog
             </button>
           )}

@@ -1233,14 +1233,15 @@ export default function Home() {
             </div>
             <div className="brief-btns">
               {[
-                ['morning', 'Morgen'],
-                ['midday', 'Middag'],
-                ['afternoon', 'Eftermiddag'],
-                ['shutdown', 'Shutdown'],
+                ['leaving_home', 'På vej på arbejde'],
+                ['leaving_work', 'Inden jeg går hjem'],
+                ['going_home', 'På vej hjem'],
+                ['arrived_home', 'Kommer hjem'],
+                ['focus', 'Fokus nu'],
               ].map(([t, label]) => (
                 <button
                   key={t}
-                  className={`brief-btn ${briefType === t ? 'active' : ''}`}
+                  className={`brief-btn ${briefType === t ? 'active' : ''} ${t === 'focus' ? 'brief-btn-focus' : ''}`}
                   onClick={() => generateBrief(t)}
                   disabled={briefLoading}
                 >
@@ -1265,7 +1266,7 @@ export default function Home() {
               </div>
             )}
             {!briefText && !briefLoading && (
-              <p className="brief-empty">Vælg hvornår på dagen for en briefing.</p>
+              <p className="brief-empty">Vælg situation for en kort briefing.</p>
             )}
           </div>
         </div>
@@ -2229,32 +2230,32 @@ export default function Home() {
         }
 
         .brief-btns {
-          display: flex;
+          display: grid;
+          grid-template-columns: 1fr 1fr;
           gap: 8px;
           margin-bottom: 14px;
-          overflow-x: auto;
-          flex-wrap: nowrap;
-          padding-bottom: 2px;
-          scrollbar-width: none;
-          -webkit-overflow-scrolling: touch;
         }
-
-        .brief-btns::-webkit-scrollbar { display: none; }
 
         .brief-btn {
           background: none;
           border: 1px solid var(--border);
-          border-radius: 20px;
+          border-radius: 10px;
           color: var(--text-2);
           font-family: inherit;
-          font-size: 12px;
-          padding: 8px 16px;
+          font-size: 13px;
+          padding: 14px 12px;
           cursor: pointer;
           transition: all 0.15s;
-          letter-spacing: 0.04em;
-          white-space: nowrap;
-          flex-shrink: 0;
+          letter-spacing: 0.03em;
+          text-align: left;
           touch-action: manipulation;
+          line-height: 1.3;
+        }
+
+        .brief-btn-focus {
+          grid-column: 1 / -1;
+          color: var(--text-1);
+          border-color: var(--border-2);
         }
 
         .brief-btn:hover { border-color: var(--border-2); color: var(--text-1); }

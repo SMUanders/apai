@@ -19,6 +19,7 @@ export interface Item {
   ai_priority: number
   context_trigger: ContextTrigger | null
   due_at: string | null
+  snoozed_until?: string | null
   group_label?: string | null
   area?: AreaType | null
   status: ItemStatus

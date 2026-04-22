@@ -3,10 +3,12 @@ import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { classifyInput } from '@/lib/classify'
 
 export async function GET() {
+  const now = new Date().toISOString()
   const { data, error } = await supabase
     .from('items')
     .select('*')
     .eq('status', 'inbox')
+    .or(`snoozed_until.is.null,snoozed_until.lt.${now}`)
     .order('ai_priority', { ascending: false })
     .order('created_at', { ascending: false })
 

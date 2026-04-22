@@ -114,10 +114,9 @@ export default function Home() {
   const [backlogItems, setBacklogItems] = useState<Item[]>([])
   const [backlogOpen, setBacklogOpen] = useState(false)
   const [sagerOpen, setSagerOpen] = useState(true)
-  const [briefText, setBriefText] = useState('')
+  const [briefPoints, setBriefPoints] = useState<{ item_id: string | null; note: string; item?: Item }[]>([])
   const [briefLoading, setBriefLoading] = useState(false)
   const [briefType, setBriefType] = useState<string | null>(null)
-  const [briefTime, setBriefTime] = useState<string | null>(null)
   const [toast, setToast] = useState('')
   const [duplicate, setDuplicate] = useState<{ existing: Item; pending: string } | null>(null)
   const [cmdOpen, setCmdOpen] = useState(false)
@@ -240,33 +239,56 @@ export default function Home() {
 
   async function generateBrief(type: string) {
     setBriefLoading(true)
-    setBriefText('')
+    setBriefPoints([])
     setBriefType(type)
-    setBriefTime(null)
     setSpeaking(false)
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel()
-    const res = await fetch('/api/brief/generate', {
+    try {
+      const res = await fetch('/api/brief/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        const enriched = (data.points ?? []).map((p: { item_id: string | null; note: string }) => ({
+          ...p,
+          item: p.item_id ? items.find((i) => i.id === p.item_id) : undefined,
+        }))
+        setBriefPoints(enriched)
+      }
+    } finally {
+      setBriefLoading(false)
+    }
+  }
+
+  async function handlePriorityChange(id: string, newPriority: number) {
+    const clamped = Math.max(1, Math.min(5, newPriority))
+    const res = await fetch(`/api/items/${id}/priority`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type }),
+      body: JSON.stringify({ priority: clamped }),
     })
-    if (!res.body) {
-      setBriefLoading(false)
-      return
+    if (res.ok) {
+      const data = await res.json()
+      const update = (prev: Item[]) => prev.map((i) => i.id === id ? { ...i, ai_priority: data.item.ai_priority } : i)
+      setItems(update)
+      setBacklogItems(update)
+      setBriefPoints((prev) => prev.map((p) => p.item?.id === id ? { ...p, item: { ...p.item!, ai_priority: data.item.ai_priority } } : p))
     }
-    const reader = res.body.getReader()
-    const decoder = new TextDecoder()
-    let text = ''
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      text += decoder.decode(value, { stream: true })
-      setBriefText(text)
+  }
+
+  async function handleSnooze(id: string, option: string) {
+    const res = await fetch(`/api/items/${id}/snooze`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ option }),
+    })
+    if (res.ok) {
+      setItems((prev) => prev.filter((i) => i.id !== id))
+      setBacklogItems((prev) => prev.filter((i) => i.id !== id))
+      setBriefPoints((prev) => prev.filter((p) => p.item_id !== id))
     }
-    setBriefLoading(false)
-    setBriefTime(
-      new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
-    )
   }
 
   async function runCompare(type: string) {
@@ -293,7 +315,8 @@ export default function Home() {
       setSpeaking(false)
       return
     }
-    const utterance = new SpeechSynthesisUtterance(briefText)
+    const speakText = briefPoints.map((p) => p.note).join('. ')
+    const utterance = new SpeechSynthesisUtterance(speakText || 'Ingen briefing.')
     utterance.lang = 'da-DK'
     const voices = window.speechSynthesis.getVoices()
     const daVoice = voices.find((v) => v.lang.startsWith('da'))
@@ -1060,6 +1083,8 @@ export default function Home() {
                 existingGroups={existingGroups}
                 onGroupUpdate={handleGroupUpdate}
                 onAreaUpdate={handleAreaUpdate}
+                onPriorityChange={handlePriorityChange}
+                onSnooze={handleSnooze}
               />
             ))}
           </div>
@@ -1102,7 +1127,9 @@ export default function Home() {
                       onUpdate={handleItemUpdate}
                       existingGroups={existingGroups}
                       onGroupUpdate={handleGroupUpdate}
-                onAreaUpdate={handleAreaUpdate}
+                      onAreaUpdate={handleAreaUpdate}
+                      onPriorityChange={handlePriorityChange}
+                      onSnooze={handleSnooze}
                     />
                   ))}
                 </div>
@@ -1120,7 +1147,9 @@ export default function Home() {
                   onUpdate={handleItemUpdate}
                   existingGroups={existingGroups}
                   onGroupUpdate={handleGroupUpdate}
-                onAreaUpdate={handleAreaUpdate}
+                  onAreaUpdate={handleAreaUpdate}
+                  onPriorityChange={handlePriorityChange}
+                  onSnooze={handleSnooze}
                 />
               ))}
             </div>
@@ -1163,7 +1192,9 @@ export default function Home() {
                           onUpdate={handleItemUpdate}
                           existingGroups={existingGroups}
                           onGroupUpdate={handleGroupUpdate}
-                onAreaUpdate={handleAreaUpdate}
+                          onAreaUpdate={handleAreaUpdate}
+                          onPriorityChange={handlePriorityChange}
+                          onSnooze={handleSnooze}
                         />
                       ))}
                     </div>
@@ -1196,7 +1227,9 @@ export default function Home() {
                   onUpdate={handleItemUpdate}
                   existingGroups={existingGroups}
                   onGroupUpdate={handleGroupUpdate}
-                onAreaUpdate={handleAreaUpdate}
+                  onAreaUpdate={handleAreaUpdate}
+                  onPriorityChange={handlePriorityChange}
+                  onSnooze={handleSnooze}
                   isBacklog
                 />
               ))}
@@ -1252,7 +1285,7 @@ export default function Home() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <button
                   className={`brief-mode-toggle ${briefCompareMode ? 'active' : ''}`}
-                  onClick={() => { setBriefCompareMode((m) => !m); setCompareResult(null); setBriefText(''); setBriefType(null) }}
+                  onClick={() => { setBriefCompareMode((m) => !m); setCompareResult(null); setBriefPoints([]); setBriefType(null) }}
                   title="A/B: sammenlign Claude og GPT-4o side om side"
                 >
                   A/B
@@ -1281,24 +1314,41 @@ export default function Home() {
             </div>
 
             {/* Normal mode */}
-            {!briefCompareMode && (briefLoading || briefText) && (
-              <div className="brief-box">
-                <p className="brief-text">
-                  {briefText}
-                  {briefLoading && <span className="brief-cursor">▌</span>}
-                </p>
+            {!briefCompareMode && briefLoading && (
+              <p className="brief-empty">Analyserer indbakken…</p>
+            )}
+            {!briefCompareMode && !briefLoading && briefPoints.length === 0 && !briefType && (
+              <p className="brief-empty">Vælg situation for en handlingsrettet briefing.</p>
+            )}
+            {!briefCompareMode && !briefLoading && briefPoints.length === 0 && briefType && (
+              <p className="brief-empty">Ingen relevante items fundet for denne situation.</p>
+            )}
+            {!briefCompareMode && briefPoints.length > 0 && (
+              <div className="brief-cards">
+                {briefPoints.map((point, idx) => (
+                  <div key={idx} className="brief-card">
+                    <div className="brief-card-summary">
+                      {point.item ? (point.item.ai_summary || point.item.raw_input) : point.note}
+                    </div>
+                    {point.item && point.note !== (point.item.ai_summary || point.item.raw_input) && (
+                      <div className="brief-card-note">{point.note}</div>
+                    )}
+                    {point.item && (
+                      <div className="brief-card-actions">
+                        <button className="brief-action-btn" onClick={() => handlePriorityChange(point.item!.id, point.item!.ai_priority + 1)} disabled={point.item.ai_priority >= 5}>↑</button>
+                        <button className="brief-action-btn" onClick={() => handlePriorityChange(point.item!.id, point.item!.ai_priority - 1)} disabled={point.item.ai_priority <= 1}>↓</button>
+                        <button className="brief-action-btn" onClick={() => handleSnooze(point.item!.id, 'tomorrow')}>I morgen</button>
+                        <button className="brief-action-btn danger" onClick={() => handlePriorityChange(point.item!.id, 1)}>Ikke vigtig</button>
+                      </div>
+                    )}
+                  </div>
+                ))}
                 <div className="brief-footer">
-                  {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
-                  {briefText && !briefLoading && (
-                    <button className="speak-btn" onClick={toggleSpeak}>
-                      {speaking ? <><VolumeX size={13} /><span>Stop</span></> : <><Volume2 size={13} /><span>Oplæs</span></>}
-                    </button>
-                  )}
+                  <button className="speak-btn" onClick={toggleSpeak}>
+                    {speaking ? <><VolumeX size={13} /><span>Stop</span></> : <><Volume2 size={13} /><span>Oplæs</span></>}
+                  </button>
                 </div>
               </div>
-            )}
-            {!briefCompareMode && !briefText && !briefLoading && (
-              <p className="brief-empty">Vælg situation for en kort briefing.</p>
             )}
 
             {/* A/B compare mode */}
@@ -2373,6 +2423,87 @@ export default function Home() {
           letter-spacing: 0.02em;
         }
 
+        .brief-cards {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .brief-card {
+          background: var(--bg);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          padding: 12px 14px;
+        }
+
+        .brief-card-summary {
+          font-size: 14px;
+          color: var(--text-1);
+          line-height: 1.4;
+          margin-bottom: 4px;
+        }
+
+        .brief-card-note {
+          font-size: 12px;
+          color: var(--accent);
+          margin-bottom: 10px;
+          line-height: 1.4;
+        }
+
+        .brief-card-actions {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          margin-top: 8px;
+        }
+
+        .brief-action-btn {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          color: var(--text-2);
+          font-family: inherit;
+          font-size: 12px;
+          padding: 5px 10px;
+          cursor: pointer;
+          touch-action: manipulation;
+          transition: all 0.12s;
+        }
+        .brief-action-btn:hover { border-color: var(--border-2); color: var(--text-1); }
+        .brief-action-btn:disabled { opacity: 0.25; cursor: not-allowed; }
+        .brief-action-btn.danger { color: #FF6B3C; border-color: rgba(255,107,60,0.3); }
+        .brief-action-btn.danger:hover { background: rgba(255,107,60,0.08); }
+
+        .action-btn.prio-btn {
+          font-size: 13px;
+          min-width: 32px;
+          padding: 6px 8px;
+          color: var(--text-2);
+        }
+        .action-btn.prio-btn:disabled { opacity: 0.2; cursor: not-allowed; }
+
+        .snooze-picker {
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          padding: 8px 0 4px;
+        }
+
+        .snooze-btn {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          color: var(--text-2);
+          font-family: inherit;
+          font-size: 12px;
+          padding: 7px 12px;
+          cursor: pointer;
+          touch-action: manipulation;
+          transition: all 0.12s;
+        }
+        .snooze-btn:hover { border-color: var(--border-2); color: var(--text-1); }
+        .snooze-btn.cancel { color: var(--text-3); }
+
         .brief-mode-toggle {
           background: none;
           border: 1px solid var(--border);
@@ -2947,6 +3078,8 @@ function ItemCard({
   onUpdate,
   onGroupUpdate,
   onAreaUpdate,
+  onPriorityChange,
+  onSnooze,
   existingGroups = [],
   isBacklog = false,
 }: {
@@ -2957,6 +3090,8 @@ function ItemCard({
   onUpdate?: (id: string, updated: Item) => void
   onGroupUpdate?: (id: string, group_label: string | null) => void
   onAreaUpdate?: (id: string, area: string) => void
+  onPriorityChange?: (id: string, newPriority: number) => void
+  onSnooze?: (id: string, option: string) => void
   existingGroups?: string[]
   isBacklog?: boolean
 }) {
@@ -2975,6 +3110,7 @@ function ItemCard({
   const [groupPickerOpen, setGroupPickerOpen] = useState(false)
   const [newGroupInput, setNewGroupInput] = useState('')
   const [areaPickerOpen, setAreaPickerOpen] = useState(false)
+  const [snoozeOpen, setSnoozeOpen] = useState(false)
 
   function onTouchStart(e: React.TouchEvent) {
     if (updateOpen) return
@@ -3226,8 +3362,27 @@ function ItemCard({
       )}
 
       {/* Handlinger */}
-      {!isTemp && !updateOpen && !groupPickerOpen && (
+      {!isTemp && !updateOpen && !groupPickerOpen && !snoozeOpen && (
         <div className="item-actions">
+          {onPriorityChange && (
+            <>
+              <button
+                className="action-btn prio-btn"
+                onClick={() => onPriorityChange(item.id, item.ai_priority + 1)}
+                disabled={item.ai_priority >= 5}
+                title="Vigtigere"
+              >↑</button>
+              <button
+                className="action-btn prio-btn"
+                onClick={() => onPriorityChange(item.id, item.ai_priority - 1)}
+                disabled={item.ai_priority <= 1}
+                title="Mindre vigtig"
+              >↓</button>
+            </>
+          )}
+          {onSnooze && (
+            <button className="action-btn" onClick={() => setSnoozeOpen(true)}>Snooze</button>
+          )}
           <button className="action-btn update-btn" onClick={openUpdate}>Opdatér</button>
           <button className="action-btn done" onClick={() => onDone(item.id)}>Færdig</button>
           {isBacklog ? (
@@ -3235,6 +3390,14 @@ function ItemCard({
           ) : (
             <button className="action-btn not-task-btn" onClick={() => onArchive(item.id)}>Ikke en opgave</button>
           )}
+        </div>
+      )}
+      {snoozeOpen && (
+        <div className="snooze-picker">
+          <button className="snooze-btn" onClick={() => { onSnooze?.(item.id, 'today'); setSnoozeOpen(false) }}>4 timer</button>
+          <button className="snooze-btn" onClick={() => { onSnooze?.(item.id, 'tomorrow'); setSnoozeOpen(false) }}>I morgen</button>
+          <button className="snooze-btn" onClick={() => { onSnooze?.(item.id, 'week'); setSnoozeOpen(false) }}>Næste uge</button>
+          <button className="snooze-btn cancel" onClick={() => setSnoozeOpen(false)}>Annuller</button>
         </div>
       )}
     </div>

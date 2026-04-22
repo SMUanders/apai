@@ -8,6 +8,7 @@ export const supabase = createClient(supabaseUrl, supabaseKey)
 export type ItemType = 'task' | 'note' | 'idea' | 'reminder' | 'someday' | 'none'
 export type ItemStatus = 'inbox' | 'done' | 'archived' | 'backlog'
 export type ContextTrigger = 'home' | 'work' | 'leaving' | 'morning' | 'evening' | 'anytime'
+export type AreaType = 'smu' | 'gca' | 'privat' | 'familie' | 'andet'
 
 export interface Item {
   id: string
@@ -19,6 +20,7 @@ export interface Item {
   context_trigger: ContextTrigger | null
   due_at: string | null
   group_label?: string | null
+  area?: AreaType | null
   status: ItemStatus
   created_at: string
   updated_at: string

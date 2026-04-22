@@ -23,6 +23,22 @@ const TYPE_LABELS: Record<string, string> = {
   none: 'Ingen handling',
 }
 
+const AREA_LABELS: Record<string, string> = {
+  smu: 'SMU',
+  gca: 'GCA',
+  privat: 'Privat',
+  familie: 'Familie',
+  andet: 'Andet',
+}
+
+const AREA_COLORS: Record<string, string> = {
+  smu: '#3CDFFF',
+  gca: '#C4B5FD',
+  privat: '#6AE08A',
+  familie: '#FF9B3C',
+  andet: '#555555',
+}
+
 const TYPE_COLORS: Record<string, string> = {
   task: '#E8FF3C',
   note: '#B8B8B8',
@@ -103,6 +119,7 @@ export default function Home() {
   const [cmdResults, setCmdResults] = useState<Item[]>([])
   // Filter + sort
   const [activeFilter, setActiveFilter] = useState('alle')
+  const [activeAreaFilter, setActiveAreaFilter] = useState('alle')
   const [activeSort, setActiveSort] = useState('prioritet')
   const [sortDir, setSortDir] = useState<'desc' | 'asc'>('desc')
   // Inline search
@@ -468,6 +485,19 @@ export default function Home() {
     )
   }
 
+  async function handleAreaUpdate(id: string, area: string) {
+    const res = await fetch(`/api/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ area }),
+    })
+    const data = await res.json()
+    if (data.area !== undefined) {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, area: data.area } : i)))
+      setBacklogItems((prev) => prev.map((i) => (i.id === id ? { ...i, area: data.area } : i)))
+    }
+  }
+
   async function moveToInbox(id: string) {
     setBacklogItems((prev) => prev.filter((i) => i.id !== id))
     const res = await fetch(`/api/items/${id}`, {
@@ -658,6 +688,10 @@ export default function Home() {
     else if (activeFilter === 'review') result = result.filter((i) => i.ai_type === 'none' || i.ai_context === '__review__')
     else if (activeFilter === 'sager') result = result.filter((i) => !!i.group_label)
 
+    if (activeAreaFilter !== 'alle') {
+      result = result.filter((i) => (i.area ?? 'andet') === activeAreaFilter)
+    }
+
     const TYPE_ORDER: Record<string, number> = { task: 0, reminder: 0, idea: 1, note: 1, someday: 2, none: 2 }
 
     result = [...result].sort((a, b) => {
@@ -684,7 +718,7 @@ export default function Home() {
     })
 
     return result
-  }, [items, activeFilter, activeSort, sortDir, searchQuery])
+  }, [items, activeFilter, activeAreaFilter, activeSort, sortDir, searchQuery])
 
   const existingGroups = useMemo(
     () => Array.from(new Set(items.filter((i) => i.group_label).map((i) => i.group_label!))).sort(),
@@ -697,7 +731,7 @@ export default function Home() {
   )
 
   const isFiltered =
-    activeFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
+    activeFilter !== 'alle' || activeAreaFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
 
   const top3 = filteredItems.filter((i) => i.ai_priority >= 4).slice(0, 3)
   const rest = filteredItems.filter((i) => !top3.find((t) => t.id === i.id))
@@ -832,6 +866,25 @@ export default function Home() {
             {searchOpen ? <X size={13} /> : <Search size={13} />}
           </button>
         </div>
+      </div>
+
+      {/* Område-filter */}
+      <div className="area-filter-row">
+        <span className="area-filter-label">Område</span>
+        {(['alle', 'smu', 'gca', 'privat', 'familie', 'andet'] as const).map((a) => (
+          <button
+            key={a}
+            className={`area-filter-btn ${activeAreaFilter === a ? 'active' : ''}`}
+            style={activeAreaFilter === a && a !== 'alle' ? {
+              borderColor: AREA_COLORS[a],
+              color: AREA_COLORS[a],
+              background: AREA_COLORS[a] + '12',
+            } : {}}
+            onClick={() => setActiveAreaFilter(a)}
+          >
+            {a === 'alle' ? 'Alle' : AREA_LABELS[a]}
+          </button>
+        ))}
       </div>
 
       {searchOpen && (
@@ -980,6 +1033,7 @@ export default function Home() {
                 onUpdate={handleItemUpdate}
                 existingGroups={existingGroups}
                 onGroupUpdate={handleGroupUpdate}
+                onAreaUpdate={handleAreaUpdate}
               />
             ))}
           </div>
@@ -1022,6 +1076,7 @@ export default function Home() {
                       onUpdate={handleItemUpdate}
                       existingGroups={existingGroups}
                       onGroupUpdate={handleGroupUpdate}
+                onAreaUpdate={handleAreaUpdate}
                     />
                   ))}
                 </div>
@@ -1039,6 +1094,7 @@ export default function Home() {
                   onUpdate={handleItemUpdate}
                   existingGroups={existingGroups}
                   onGroupUpdate={handleGroupUpdate}
+                onAreaUpdate={handleAreaUpdate}
                 />
               ))}
             </div>
@@ -1081,6 +1137,7 @@ export default function Home() {
                           onUpdate={handleItemUpdate}
                           existingGroups={existingGroups}
                           onGroupUpdate={handleGroupUpdate}
+                onAreaUpdate={handleAreaUpdate}
                         />
                       ))}
                     </div>
@@ -1113,6 +1170,7 @@ export default function Home() {
                   onUpdate={handleItemUpdate}
                   existingGroups={existingGroups}
                   onGroupUpdate={handleGroupUpdate}
+                onAreaUpdate={handleAreaUpdate}
                   isBacklog
                 />
               ))}
@@ -2635,6 +2693,84 @@ export default function Home() {
         }
         .ai-rerun-btn:hover { color: #4A6A00; }
 
+        /* Område-filter */
+        .area-filter-row {
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          overflow-x: auto;
+          flex-wrap: nowrap;
+          padding-bottom: 2px;
+          margin-bottom: 12px;
+          scrollbar-width: none;
+        }
+        .area-filter-row::-webkit-scrollbar { display: none; }
+
+        .area-filter-label {
+          font-size: 9px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          color: var(--text-3);
+          white-space: nowrap;
+          flex-shrink: 0;
+          padding-right: 2px;
+        }
+
+        .area-filter-btn {
+          background: none;
+          border: 1px solid #222;
+          border-radius: 20px;
+          color: #3A3A3A;
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.06em;
+          padding: 4px 10px;
+          cursor: pointer;
+          transition: all 0.1s;
+          white-space: nowrap;
+          flex-shrink: 0;
+          touch-action: manipulation;
+        }
+        .area-filter-btn:hover { border-color: #333; color: #555; }
+        .area-filter-btn.active { border-color: var(--border-2); color: var(--text-2); }
+
+        /* Area badge på items */
+        .area-badge {
+          font-size: 9px;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          font-weight: 600;
+          padding: 2px 6px;
+          border-radius: 4px;
+          border: 1px solid;
+          cursor: pointer;
+          flex-shrink: 0;
+        }
+
+        .area-picker {
+          margin-top: 8px;
+          display: flex;
+          gap: 6px;
+          flex-wrap: wrap;
+          padding-top: 8px;
+          border-top: 1px solid var(--border);
+        }
+
+        .area-picker-btn {
+          background: none;
+          border: 1px solid #262626;
+          border-radius: 6px;
+          color: #A2A2A2;
+          font-family: inherit;
+          font-size: 11px;
+          padding: 6px 10px;
+          cursor: pointer;
+          touch-action: manipulation;
+          transition: all 0.1s;
+        }
+        .area-picker-btn:hover { border-color: #3A3A3A; color: #F0F0F0; }
+        .area-picker-btn.active { font-weight: 700; }
+
         /* Mobile */
         @media (max-width: 640px) {
           .apai-root {
@@ -2693,6 +2829,7 @@ function ItemCard({
   onBacklog,
   onUpdate,
   onGroupUpdate,
+  onAreaUpdate,
   existingGroups = [],
   isBacklog = false,
 }: {
@@ -2702,6 +2839,7 @@ function ItemCard({
   onBacklog?: (id: string) => void
   onUpdate?: (id: string, updated: Item) => void
   onGroupUpdate?: (id: string, group_label: string | null) => void
+  onAreaUpdate?: (id: string, area: string) => void
   existingGroups?: string[]
   isBacklog?: boolean
 }) {
@@ -2719,6 +2857,7 @@ function ItemCard({
   const [updateChanges, setUpdateChanges] = useState<string[] | null>(null)
   const [groupPickerOpen, setGroupPickerOpen] = useState(false)
   const [newGroupInput, setNewGroupInput] = useState('')
+  const [areaPickerOpen, setAreaPickerOpen] = useState(false)
 
   function onTouchStart(e: React.TouchEvent) {
     if (updateOpen) return
@@ -2837,6 +2976,25 @@ function ItemCard({
           {(item.ai_type === 'none' || item.ai_context === '__review__') && (
             <span className="review-badge">til review</span>
           )}
+          {item.area && item.area !== 'andet' && (
+            <span
+              className="area-badge"
+              style={{ color: AREA_COLORS[item.area] ?? '#555', borderColor: (AREA_COLORS[item.area] ?? '#555') + '40' }}
+              onClick={(e) => { e.stopPropagation(); setAreaPickerOpen((o) => !o) }}
+              title="Skift område"
+            >
+              {AREA_LABELS[item.area] ?? item.area}
+            </span>
+          )}
+          {(!item.area || item.area === 'andet') && onAreaUpdate && (
+            <button
+              className="group-attach-btn"
+              style={{ color: '#2A2A2A', borderColor: '#1E1E1E' }}
+              onClick={(e) => { e.stopPropagation(); setAreaPickerOpen((o) => !o) }}
+            >
+              + område
+            </button>
+          )}
         </div>
         {item.ai_summary && item.ai_summary !== item.raw_input && (
           <div className="item-raw">{item.raw_input}</div>
@@ -2924,6 +3082,29 @@ function ItemCard({
               Fjern fra sag
             </button>
           )}
+        </div>
+      )}
+
+      {/* Område-picker */}
+      {areaPickerOpen && onAreaUpdate && (
+        <div className="area-picker">
+          {(['smu', 'gca', 'privat', 'familie', 'andet'] as const).map((a) => (
+            <button
+              key={a}
+              className={`area-picker-btn ${item.area === a ? 'active' : ''}`}
+              style={item.area === a ? { borderColor: AREA_COLORS[a], color: AREA_COLORS[a] } : {}}
+              onClick={() => { onAreaUpdate(item.id, a); setAreaPickerOpen(false) }}
+            >
+              {AREA_LABELS[a]}
+            </button>
+          ))}
+          <button
+            className="area-picker-btn"
+            style={{ color: '#3A3A3A' }}
+            onClick={() => setAreaPickerOpen(false)}
+          >
+            Luk
+          </button>
         </div>
       )}
 

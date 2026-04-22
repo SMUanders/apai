@@ -29,6 +29,17 @@ type ActionStatus = 'idle' | 'confirm' | 'loading' | 'done' | 'error'
 
 const ACTIONS = [
   {
+    key: 'backfill-area',
+    label: 'Sæt område på alle items',
+    description: 'Gætter område (SMU, GCA, Privat, Familie) på eksisterende items baseret på nøgleord. Kun items uden område opdateres. Ingen AI-kald — hurtigt.',
+    confirmText: 'Opdaterer område på items der mangler det. Kan justeres manuelt bagefter. Fortsæt?',
+    url: '/api/items/backfill-area',
+    formatResult: (d: Record<string, unknown>) =>
+      d.updated === 0
+        ? `Alle ${d.total} items har allerede et område sat.`
+        : `${d.updated} af ${d.total} items fik tildelt et område.`,
+  },
+  {
     key: 'reprioritize',
     label: 'Re-prioritér indbakken',
     description: 'AI gennemgår alle inbox-items og justerer prioritet (1–5) samt type. Items ældre end 7 dage trækkes ned. Ændrer ikke tekst eller indhold.',

@@ -117,6 +117,7 @@ export async function POST() {
       ai_context: `todoist:${task.id}`,
       ai_priority: classification.priority,
       context_trigger: classification.context_trigger,
+      area: ('area' in classification ? classification.area : null) ?? 'andet',
       status: 'inbox',
     }
 

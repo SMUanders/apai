@@ -1,5 +1,5 @@
 import { complete } from './ai'
-import { ItemType, ContextTrigger } from './supabase'
+import { ItemType, ContextTrigger, AreaType } from './supabase'
 
 export interface Classification {
   type: ItemType
@@ -9,6 +9,7 @@ export interface Classification {
   priority: number
   due_at: string | null
   confident: boolean
+  area: AreaType
 }
 
 const SYSTEM_PROMPT = `Du er en klassificeringsmotor for et personligt hukommelsessystem kaldet APAI.
@@ -25,7 +26,8 @@ JSON-format:
   "context_trigger": "home" | "work" | "leaving" | "morning" | "evening" | "anytime" | null,
   "priority": 1-5,
   "due_at": "ISO 8601 timestamp hvis teksten nævner en konkret dato eller tid — ellers null. Brug referencedatoen til at beregne relative udtryk som 'på lørdag', 'kl 14', 'i morgen tidlig', 'om 3 dage', 'næste uge'. Returner altid UTC.",
-  "confident": true/false
+  "confident": true/false,
+  "area": "smu" | "gca" | "privat" | "familie" | "andet"
 }
 
 Typedefinitioner:
@@ -35,6 +37,13 @@ Typedefinitioner:
 - note: information der skal gemmes
 - someday: måske en dag, ikke nu
 - none: kræver ingen handling
+
+area-regler:
+- "smu"     → vedrører Signmeup / SMU (arbejde, kunder, servere, kode, APAI-udvikling)
+- "gca"     → vedrører Grand Champion Arcade / GCA (spillemaskiner, lokaler, drift)
+- "privat"  → personligt (helbred, bil, hjem, økonomi, fritid, indkøb)
+- "familie" → relateret til familiemedlemmer (børn, partner, forældre)
+- "andet"   → uklart, neutralt eller blandet — vælg denne ved tvivl
 
 confident:
 - true  → klar klassifikation, input var tydeligt
@@ -63,7 +72,7 @@ export async function classifyInput(rawInput: string): Promise<Classification> {
   const text = await complete(
     SYSTEM_PROMPT,
     `[Referencedato: ${referenceDate}]\n\n${rawInput}`,
-    400
+    450
   )
 
   const cleaned = text.replace(/```json|```/g, '').trim()
@@ -77,5 +86,6 @@ export async function classifyInput(rawInput: string): Promise<Classification> {
     priority: Number(parsed.priority),
     due_at: parsed.due_at || null,
     confident: parsed.confident !== false,
+    area: (parsed.area as AreaType) || 'andet',
   }
 }

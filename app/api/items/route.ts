@@ -77,10 +77,10 @@ export async function POST(req: NextRequest) {
     ai_context: classification.context,
     ai_priority: classification.priority,
     context_trigger: classification.context_trigger,
+    area: classification.area ?? 'andet',
     status: 'inbox',
   }
 
-  // Forsøg med due_at — falder tilbage uden hvis kolonnen ikke eksisterer
   let result = await supabase
     .from('items')
     .insert({ ...baseInsert, due_at: classification.due_at })

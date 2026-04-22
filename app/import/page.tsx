@@ -49,15 +49,28 @@ export default function ImportPage() {
         })
       }
 
+      if (!res.ok) {
+        const ct = res.headers.get('content-type') ?? ''
+        if (ct.includes('application/json')) {
+          const err = await res.json()
+          setParseError(err.error ?? `Fejl ${res.status}`)
+        } else {
+          setParseError(`Server fejl ${res.status} — prøv igen`)
+        }
+        setParsing(false)
+        return
+      }
+
       const data = await res.json()
-      if (!res.ok || data.error) { setParseError(data.error ?? 'Parsing fejlede'); setParsing(false); return }
+      if (data.error) { setParseError(data.error); setParsing(false); return }
+      if (!data.lines?.length) { setParseError('Ingen opgaver fundet i filen'); setParsing(false); return }
 
       setLines(data.lines)
       setSelected(data.lines.map(() => true))
       setSource(data.source)
       setStep('preview')
     } catch (e) {
-      setParseError(`Netværksfejl: ${e}`)
+      setParseError(`Fejl: ${e}`)
     }
     setParsing(false)
   }

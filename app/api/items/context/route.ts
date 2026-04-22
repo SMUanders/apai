@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
 // GET /api/items/context?triggers=leaving,home,anytime
 export async function GET(req: NextRequest) {

@@ -24,11 +24,11 @@ const TYPE_LABELS: Record<string, string> = {
 
 const TYPE_COLORS: Record<string, string> = {
   task: '#E8FF3C',
-  note: '#B8B8B8',
+  note: '#C8C8C8',
   idea: '#FF9B3C',
   reminder: '#3CDFFF',
   someday: '#C4B5FD',
-  none: '#555555',
+  none: '#666666',
 }
 
 const PRIORITY_DOT = (p: number) => {
@@ -299,7 +299,6 @@ export default function Home() {
       return
     }
 
-    // Fallback: hold-to-record → Whisper
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       const recorder = new MediaRecorder(stream)
@@ -366,36 +365,14 @@ export default function Home() {
 
   return (
     <main className="apai-root">
+      {/* Header */}
       <header className="apai-header">
         <span className="apai-logo">APAI</span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <span className="apai-count">{items.length} i indbakken</span>
-          <Link href="/settings" style={{ color: '#333', textDecoration: 'none', fontSize: 16 }} title="Indstillinger">⚙</Link>
+          <Link href="/settings" className="header-settings-link" title="Indstillinger">⚙</Link>
         </div>
       </header>
-
-      {/* Brief */}
-      <section className="brief-section">
-        <div className="brief-btns">
-          {[['morning','🌅','Morgen'],['midday','☀️','Middag'],['afternoon','🕓','Eftermiddag'],['shutdown','🌙','Shutdown']].map(([t,icon,label]) => (
-            <button key={t} className={`brief-btn ${briefType === t ? 'active' : ''}`} onClick={() => generateBrief(t)} disabled={briefLoading}>
-              {icon} {label}
-            </button>
-          ))}
-        </div>
-        {(briefLoading || briefText) && (
-          <div className="brief-box">
-            <p className="brief-text">
-              {briefText}
-              {briefLoading && <span className="brief-cursor">▌</span>}
-            </p>
-            {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
-          </div>
-        )}
-        {!briefText && !briefLoading && (
-          <p className="brief-empty">Tryk en knap for en kort briefing.</p>
-        )}
-      </section>
 
       {/* Capture */}
       <section className="capture-section">
@@ -427,7 +404,7 @@ export default function Home() {
           </div>
         )}
         <div className="capture-footer">
-          <span className="capture-hint">⌘↵ for at sende</span>
+          <span className="capture-hint">⌘↵ sender</span>
           <button
             className="capture-btn"
             onClick={() => handleSubmit()}
@@ -485,13 +462,35 @@ export default function Home() {
         </section>
       )}
 
-      {/* Kontekst-vælger */}
+      {/* Brief */}
+      <section className="brief-section">
+        <h2 className="section-label" style={{ marginBottom: 10 }}>Daglig brief</h2>
+        <div className="brief-btns">
+          {[['morning','🌅','Morgen'],['midday','☀️','Middag'],['afternoon','🕓','Eftermiddag'],['shutdown','🌙','Shutdown']].map(([t,icon,label]) => (
+            <button key={t} className={`brief-btn ${briefType === t ? 'active' : ''}`} onClick={() => generateBrief(t)} disabled={briefLoading}>
+              {icon} {label}
+            </button>
+          ))}
+        </div>
+        {(briefLoading || briefText) && (
+          <div className="brief-box">
+            <p className="brief-text">
+              {briefText}
+              {briefLoading && <span className="brief-cursor">▌</span>}
+            </p>
+            {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
+          </div>
+        )}
+      </section>
+
+      {/* Kontekst-vælger (desktop only — mobile via bottom dock) */}
       <div className="context-picker">
         {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
           <button
             key={ctx}
             className={`context-pick-btn ${currentContext === ctx ? 'active' : ''}`}
             onClick={() => handleContextSelect(ctx)}
+            title={CONTEXT_META[ctx].label ?? ctx}
           >
             {CONTEXT_META[ctx].icon}
           </button>
@@ -557,45 +556,92 @@ export default function Home() {
         </div>
       )}
 
+      {/* Bottom dock — mobile only */}
+      <nav className="bottom-dock">
+        <div className="dock-context">
+          {(['morning', 'work', 'leaving', 'evening'] as ContextTrigger[]).map((ctx) => (
+            <button
+              key={ctx}
+              className={`dock-ctx-btn ${currentContext === ctx ? 'active' : ''}`}
+              onClick={() => handleContextSelect(ctx)}
+              aria-label={String(CONTEXT_META[ctx].label ?? ctx)}
+            >
+              {CONTEXT_META[ctx].icon}
+            </button>
+          ))}
+        </div>
+        <Link href="/settings" className="dock-settings-btn" title="Indstillinger">⚙</Link>
+      </nav>
+
       <style jsx global>{`
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+          --bg: #080808;
+          --surface: #111111;
+          --surface-2: #1C1C1C;
+          --border: #262626;
+          --border-2: #363636;
+          --text-1: #F0F0F0;
+          --text-2: #A2A2A2;
+          --text-3: #727272;
+          --accent: #E8FF3C;
+          --accent-bg: rgba(232,255,60,0.07);
+          --danger: #FF6B3C;
+          --radius: 10px;
+          --radius-sm: 6px;
+        }
 
         body {
-          background: #0E0E0E;
-          color: #E8E8E8;
+          background: var(--bg);
+          color: var(--text-1);
           font-family: 'DM Mono', 'Courier New', monospace;
           min-height: 100vh;
+          -webkit-font-smoothing: antialiased;
         }
 
         .apai-root {
           max-width: 680px;
           margin: 0 auto;
-          padding: 32px 20px 80px;
+          padding: 24px 18px 160px;
         }
 
+        /* ─── Header ─── */
         .apai-header {
           display: flex;
           justify-content: space-between;
-          align-items: baseline;
-          margin-bottom: 32px;
+          align-items: center;
+          margin-bottom: 28px;
         }
 
         .apai-logo {
           font-size: 11px;
-          letter-spacing: 0.35em;
-          color: #E8FF3C;
+          letter-spacing: 0.4em;
+          color: var(--accent);
           font-weight: 700;
           text-transform: uppercase;
         }
 
         .apai-count {
-          font-size: 11px;
-          color: #666;
-          letter-spacing: 0.1em;
+          font-size: 12px;
+          color: var(--text-3);
+          letter-spacing: 0.06em;
         }
 
+        .header-settings-link {
+          color: var(--text-3);
+          text-decoration: none;
+          font-size: 18px;
+          line-height: 1;
+          padding: 4px;
+          transition: color 0.15s;
+        }
+
+        .header-settings-link:hover { color: var(--text-2); }
+
+        /* ─── Capture ─── */
         .capture-section {
-          margin-bottom: 48px;
+          margin-bottom: 40px;
         }
 
         .capture-box {
@@ -604,76 +650,75 @@ export default function Home() {
 
         .capture-input {
           width: 100%;
-          background: #181818;
-          border: 1px solid #2A2A2A;
-          border-radius: 8px;
-          color: #E8E8E8;
+          background: var(--surface);
+          border: 1.5px solid var(--border);
+          border-radius: var(--radius);
+          color: var(--text-1);
           font-family: inherit;
-          font-size: 15px;
-          line-height: 1.6;
-          padding: 16px 60px 16px 16px;
+          font-size: 16px;
+          line-height: 1.65;
+          padding: 18px 72px 18px 18px;
           resize: none;
           outline: none;
           transition: border-color 0.15s;
+          min-height: 110px;
         }
 
         .capture-input:focus {
-          border-color: #E8FF3C;
+          border-color: var(--accent);
         }
 
         .capture-input::placeholder {
-          color: #333;
+          color: var(--text-3);
         }
 
         .mic-btn {
           position: absolute;
-          bottom: 12px;
-          right: 12px;
-          width: 38px;
-          height: 38px;
-          background: #222;
-          border: 1px solid #2A2A2A;
+          bottom: 14px;
+          right: 14px;
+          width: 46px;
+          height: 46px;
+          background: var(--surface-2);
+          border: 1.5px solid var(--border);
           border-radius: 50%;
           display: flex;
           align-items: center;
           justify-content: center;
-          font-size: 16px;
+          font-size: 20px;
           cursor: pointer;
           transition: all 0.15s;
           touch-action: manipulation;
         }
 
-        .mic-btn:hover {
-          border-color: #444;
-        }
+        .mic-btn:hover { border-color: var(--border-2); }
 
         .mic-btn.recording {
-          border-color: #E8FF3C;
-          background: #1A1E00;
-          animation: pulse 1s ease-in-out infinite;
+          border-color: var(--accent);
+          background: var(--accent-bg);
+          animation: pulse 1.2s ease-in-out infinite;
         }
 
         @keyframes pulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(232,255,60,0.4); }
-          50% { box-shadow: 0 0 0 8px rgba(232,255,60,0); }
+          0%, 100% { box-shadow: 0 0 0 0 rgba(232,255,60,0.35); }
+          50% { box-shadow: 0 0 0 10px rgba(232,255,60,0); }
         }
 
         .listening-bar {
           display: flex;
           align-items: center;
-          gap: 8px;
+          gap: 10px;
           margin-top: 8px;
-          padding: 6px 12px;
-          background: #181818;
-          border: 1px solid #2A2A2A;
-          border-radius: 6px;
-          min-height: 32px;
+          padding: 10px 14px;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          min-height: 40px;
         }
 
         .listening-dot {
-          width: 6px;
-          height: 6px;
-          background: #E8FF3C;
+          width: 7px;
+          height: 7px;
+          background: var(--accent);
           border-radius: 50%;
           flex-shrink: 0;
           animation: blink 1s ease-in-out infinite;
@@ -681,12 +726,12 @@ export default function Home() {
 
         @keyframes blink {
           0%, 100% { opacity: 1; }
-          50% { opacity: 0.2; }
+          50% { opacity: 0.15; }
         }
 
         .listening-text {
-          font-size: 12px;
-          color: #888;
+          font-size: 13px;
+          color: var(--text-2);
           font-style: italic;
           overflow: hidden;
           text-overflow: ellipsis;
@@ -695,48 +740,50 @@ export default function Home() {
 
         .capture-footer {
           display: flex;
-          justify-content: space-between;
+          justify-content: flex-end;
           align-items: center;
-          margin-top: 8px;
-          gap: 8px;
+          margin-top: 10px;
+          gap: 12px;
         }
 
         .capture-hint {
           font-size: 11px;
-          color: #333;
+          color: var(--text-3);
           letter-spacing: 0.05em;
-          flex-shrink: 0;
         }
 
         .capture-btn {
-          background: #E8FF3C;
-          color: #0E0E0E;
+          background: var(--accent);
+          color: #080808;
           border: none;
-          border-radius: 6px;
-          padding: 8px 20px;
+          border-radius: var(--radius-sm);
+          padding: 12px 24px;
           font-family: inherit;
-          font-size: 12px;
+          font-size: 13px;
           font-weight: 700;
           letter-spacing: 0.05em;
           cursor: pointer;
           transition: opacity 0.15s;
+          touch-action: manipulation;
         }
 
         .capture-btn:disabled {
-          opacity: 0.3;
+          opacity: 0.25;
           cursor: not-allowed;
         }
 
+        /* ─── Sections ─── */
         .section-label {
           font-size: 10px;
           letter-spacing: 0.3em;
           text-transform: uppercase;
-          color: #666;
+          color: var(--text-3);
           margin-bottom: 12px;
+          font-weight: 400;
         }
 
-        .priority-section { margin-bottom: 40px; }
-        .inbox-section { margin-bottom: 40px; }
+        .priority-section { margin-bottom: 36px; }
+        .inbox-section { margin-bottom: 36px; }
 
         .item-list {
           display: flex;
@@ -744,16 +791,15 @@ export default function Home() {
           gap: 8px;
         }
 
+        /* ─── Item card ─── */
         .item-card {
-          background: #141414;
-          border: 1px solid #1E1E1E;
-          border-radius: 8px;
-          padding: 14px 16px;
-          min-height: 60px;
-          display: grid;
-          grid-template-columns: 1fr auto;
-          gap: 8px;
-          align-items: start;
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 16px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
           position: relative;
           overflow: hidden;
           touch-action: pan-y;
@@ -761,21 +807,19 @@ export default function Home() {
           transition: border-color 0.15s;
         }
 
-        .item-card:hover {
-          border-color: #2A2A2A;
-        }
+        .item-card:hover { border-color: var(--border-2); }
 
         .item-card.priority-high {
-          border-left: 2px solid #E8FF3C;
+          border-left: 3px solid var(--accent);
         }
 
         .item-card.flash-done {
-          background: #0E1A00;
+          background: #0D1800;
           transition: background 0.3s;
         }
 
         .item-card.flash-archive {
-          background: #1A0E00;
+          background: #1A0D00;
           transition: background 0.3s;
         }
 
@@ -791,158 +835,181 @@ export default function Home() {
           font-weight: 700;
         }
 
-        .swipe-hint.left-hint { left: 14px; color: #E8FF3C; }
-        .swipe-hint.right-hint { right: 14px; color: #FF6B3C; }
+        .swipe-hint.left-hint { left: 16px; color: var(--accent); }
+        .swipe-hint.right-hint { right: 16px; color: var(--danger); }
+
+        .item-body { flex: 1; }
 
         .item-summary {
-          font-size: 14px;
-          line-height: 1.5;
-          color: #E0E0E0;
+          font-size: 15px;
+          line-height: 1.55;
+          color: var(--text-1);
         }
 
         .item-meta {
           display: flex;
           gap: 8px;
           align-items: center;
-          margin-top: 6px;
+          margin-top: 8px;
           flex-wrap: wrap;
         }
 
         .item-type {
           font-size: 10px;
-          letter-spacing: 0.15em;
+          letter-spacing: 0.12em;
           text-transform: uppercase;
-          padding: 2px 6px;
-          border-radius: 3px;
+          padding: 3px 7px;
+          border-radius: 4px;
           font-weight: 600;
         }
 
         .item-context {
-          font-size: 11px;
-          color: #666;
+          font-size: 12px;
+          color: var(--text-2);
         }
 
         .item-priority {
-          font-size: 10px;
-          color: #444;
-          letter-spacing: 0.05em;
+          font-size: 11px;
+          color: var(--text-3);
+          letter-spacing: 0.04em;
         }
 
         .item-raw {
-          font-size: 11px;
-          color: #3A3A3A;
-          margin-top: 4px;
-          line-height: 1.4;
+          font-size: 12px;
+          color: var(--text-3);
+          margin-top: 6px;
+          line-height: 1.45;
           font-style: italic;
         }
 
         .item-actions {
           display: flex;
-          flex-direction: column;
-          gap: 4px;
+          flex-direction: row;
+          gap: 6px;
+          padding-top: 4px;
+          border-top: 1px solid var(--border);
         }
 
         .action-btn {
           background: none;
-          border: 1px solid #2A2A2A;
-          border-radius: 4px;
-          color: #666;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          color: var(--text-2);
           font-family: inherit;
-          font-size: 11px;
-          padding: 4px 8px;
+          font-size: 12px;
+          padding: 7px 12px;
           cursor: pointer;
-          transition: all 0.1s;
+          transition: all 0.12s;
           white-space: nowrap;
+          touch-action: manipulation;
+          flex: 1;
+          text-align: center;
         }
 
-        .action-btn:hover { border-color: #555; color: #AAA; }
-        .action-btn.done:hover { border-color: #E8FF3C; color: #E8FF3C; }
+        .action-btn:hover { border-color: var(--border-2); color: var(--text-1); }
+        .action-btn.done:hover { border-color: var(--accent); color: var(--accent); }
 
+        /* ─── Empty state ─── */
         .empty-state {
           text-align: center;
-          color: #2A2A2A;
+          color: var(--text-3);
           font-size: 14px;
           line-height: 2;
           margin-top: 80px;
         }
 
-        .context-banner {
+        /* ─── Brief ─── */
+        .brief-section {
+          margin-top: 48px;
+          padding-top: 32px;
+          border-top: 1px solid var(--border);
           margin-bottom: 24px;
-          border: 1px solid #2A2A2A;
-          border-radius: 8px;
-          overflow: hidden;
         }
 
-        .context-banner-header {
-          width: 100%;
+        .brief-btns {
           display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding: 10px 14px;
-          background: #141414;
-          border: none;
-          color: #E8E8E8;
+          gap: 8px;
+          margin-bottom: 14px;
+          overflow-x: auto;
+          padding-bottom: 2px;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+
+        .brief-btns::-webkit-scrollbar { display: none; }
+
+        .brief-btn {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: 20px;
+          color: var(--text-2);
           font-family: inherit;
-          font-size: 13px;
+          font-size: 12px;
+          padding: 8px 16px;
           cursor: pointer;
-          text-align: left;
+          transition: all 0.15s;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
+          flex-shrink: 0;
+          touch-action: manipulation;
         }
 
-        .context-banner-header:hover { background: #1A1A1A; }
+        .brief-btn:hover { border-color: var(--border-2); color: var(--text-1); }
+        .brief-btn.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+        .brief-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
-        .context-banner-count {
+        .brief-box {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 18px;
+        }
+
+        .brief-text {
+          font-size: 14px;
+          line-height: 1.75;
+          color: var(--text-1);
+          white-space: pre-wrap;
+        }
+
+        .brief-cursor {
+          animation: blink 0.8s step-end infinite;
+          color: var(--accent);
+        }
+
+        .brief-timestamp {
+          display: block;
           font-size: 11px;
-          color: #555;
-          letter-spacing: 0.05em;
+          color: var(--text-3);
+          margin-top: 12px;
+          letter-spacing: 0.04em;
         }
 
-        .context-banner-items {
-          border-top: 1px solid #1E1E1E;
-          display: flex;
-          flex-direction: column;
-          gap: 1px;
-        }
-
-        .context-item {
-          padding: 10px 14px;
-          background: #0E0E0E;
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .context-item-summary {
-          font-size: 13px;
-          color: #C0C0C0;
-        }
-
-        .context-item-ctx {
-          font-size: 11px;
-          color: #444;
-        }
-
+        /* ─── Context picker (desktop) ─── */
         .context-picker {
           display: flex;
           gap: 8px;
           justify-content: center;
-          margin-top: 48px;
+          margin-top: 12px;
           padding-top: 24px;
-          border-top: 1px solid #1A1A1A;
+          border-top: 1px solid var(--border);
         }
 
         .context-pick-btn {
           background: none;
-          border: 1px solid #222;
-          border-radius: 6px;
-          padding: 8px 14px;
-          font-size: 18px;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          padding: 10px 16px;
+          font-size: 20px;
           cursor: pointer;
           transition: all 0.15s;
+          touch-action: manipulation;
         }
 
-        .context-pick-btn:hover { border-color: #444; }
-        .context-pick-btn.active { border-color: #E8FF3C; background: #1A1E00; }
+        .context-pick-btn:hover { border-color: var(--border-2); }
+        .context-pick-btn.active { border-color: var(--accent); background: var(--accent-bg); }
 
+        /* ─── Reclassify ─── */
         .reclassify-row {
           display: flex;
           align-items: center;
@@ -954,26 +1021,28 @@ export default function Home() {
         .reclassify-btn {
           background: none;
           border: none;
-          color: #2A2A2A;
+          color: var(--text-3);
           font-family: inherit;
           font-size: 11px;
           cursor: pointer;
           letter-spacing: 0.05em;
           transition: color 0.15s;
+          padding: 8px 0;
         }
 
-        .reclassify-btn:hover { color: #555; }
-        .reclassify-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .reclassify-btn:hover { color: var(--text-2); }
+        .reclassify-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
         .reclassify-result {
           font-size: 11px;
-          color: #E8FF3C;
+          color: var(--accent);
         }
 
+        /* ─── Backlog ─── */
         .backlog-section {
-          margin-top: 40px;
-          padding-top: 24px;
-          border-top: 1px solid #1A1A1A;
+          margin-top: 32px;
+          padding-top: 20px;
+          border-top: 1px solid var(--border);
         }
 
         .backlog-toggle {
@@ -983,7 +1052,7 @@ export default function Home() {
           align-items: center;
           background: none;
           border: none;
-          color: #555;
+          color: var(--text-2);
           font-family: inherit;
           font-size: 10px;
           letter-spacing: 0.3em;
@@ -991,95 +1060,37 @@ export default function Home() {
           cursor: pointer;
           padding: 0;
           margin-bottom: 4px;
+          touch-action: manipulation;
         }
 
-        .backlog-toggle:hover { color: #888; }
+        .backlog-toggle:hover { color: var(--text-1); }
 
         .backlog-count {
           font-size: 10px;
           letter-spacing: 0.05em;
         }
 
-        .brief-section {
-          margin-bottom: 32px;
-        }
-
-        .brief-btns {
-          display: flex;
-          gap: 8px;
-          margin-bottom: 12px;
-          flex-wrap: wrap;
-        }
-
-        .brief-btn {
-          background: none;
-          border: 1px solid #222;
-          border-radius: 6px;
-          color: #555;
-          font-family: inherit;
-          font-size: 11px;
-          padding: 6px 12px;
-          cursor: pointer;
-          transition: all 0.15s;
-          letter-spacing: 0.05em;
-        }
-
-        .brief-btn:hover { border-color: #444; color: #999; }
-        .brief-btn.active { border-color: #E8FF3C; color: #E8FF3C; }
-        .brief-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-
-        .brief-box {
-          background: #141414;
-          border: 1px solid #1E1E1E;
-          border-radius: 8px;
-          padding: 16px;
-        }
-
-        .brief-text {
-          font-size: 14px;
-          line-height: 1.7;
-          color: #C0C0C0;
-          white-space: pre-wrap;
-        }
-
-        .brief-cursor {
-          animation: blink 0.8s step-end infinite;
-          color: #E8FF3C;
-        }
-
-        .brief-timestamp {
-          display: block;
-          font-size: 10px;
-          color: #333;
-          margin-top: 10px;
-          letter-spacing: 0.05em;
-        }
-
-        .brief-empty {
-          font-size: 12px;
-          color: #2A2A2A;
-          letter-spacing: 0.02em;
-        }
-
+        /* ─── Toast ─── */
         .toast {
           position: fixed;
-          bottom: 32px;
+          bottom: 90px;
           left: 50%;
           transform: translateX(-50%);
-          background: #1A1A1A;
-          border: 1px solid #2A2A2A;
-          border-radius: 6px;
-          padding: 10px 20px;
+          background: var(--surface-2);
+          border: 1px solid var(--border-2);
+          border-radius: var(--radius-sm);
+          padding: 12px 24px;
           font-size: 13px;
-          color: #E8FF3C;
-          z-index: 100;
+          color: var(--accent);
+          z-index: 300;
           white-space: nowrap;
         }
 
+        /* ─── Modal ─── */
         .modal-overlay {
           position: fixed;
           inset: 0;
-          background: rgba(0,0,0,0.7);
+          background: rgba(0,0,0,0.75);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -1088,61 +1099,63 @@ export default function Home() {
         }
 
         .modal {
-          background: #141414;
-          border: 1px solid #2A2A2A;
-          border-radius: 10px;
+          background: var(--surface);
+          border: 1px solid var(--border-2);
+          border-radius: var(--radius);
           padding: 24px;
-          max-width: 400px;
+          max-width: 420px;
           width: 100%;
         }
 
         .modal-title {
           font-size: 13px;
-          color: #888;
-          margin-bottom: 12px;
+          color: var(--text-2);
+          margin-bottom: 14px;
           letter-spacing: 0.02em;
         }
 
         .modal-existing {
-          font-size: 14px;
-          color: #E8E8E8;
-          padding: 12px;
-          background: #0E0E0E;
-          border-radius: 6px;
-          margin-bottom: 16px;
-          line-height: 1.5;
+          font-size: 15px;
+          color: var(--text-1);
+          padding: 14px;
+          background: var(--bg);
+          border-radius: var(--radius-sm);
+          margin-bottom: 18px;
+          line-height: 1.55;
         }
 
         .modal-actions {
           display: flex;
-          gap: 8px;
+          gap: 10px;
         }
 
         .modal-btn {
           flex: 1;
-          padding: 10px;
-          border: 1px solid #E8FF3C;
-          border-radius: 6px;
+          padding: 13px;
+          border: 1.5px solid var(--accent);
+          border-radius: var(--radius-sm);
           background: none;
-          color: #E8FF3C;
+          color: var(--accent);
           font-family: inherit;
-          font-size: 12px;
+          font-size: 13px;
           cursor: pointer;
           font-weight: 700;
           transition: all 0.15s;
+          touch-action: manipulation;
         }
 
         .modal-btn.secondary {
-          border-color: #333;
-          color: #555;
+          border-color: var(--border-2);
+          color: var(--text-2);
         }
 
+        /* ─── Command palette ─── */
         .cmd-palette {
-          background: #141414;
-          border: 1px solid #2A2A2A;
-          border-radius: 10px;
+          background: var(--surface);
+          border: 1px solid var(--border-2);
+          border-radius: var(--radius);
           width: 100%;
-          max-width: 520px;
+          max-width: 540px;
           overflow: hidden;
         }
 
@@ -1150,79 +1163,165 @@ export default function Home() {
           width: 100%;
           background: transparent;
           border: none;
-          border-bottom: 1px solid #1E1E1E;
-          color: #E8E8E8;
+          border-bottom: 1px solid var(--border);
+          color: var(--text-1);
           font-family: inherit;
-          font-size: 15px;
-          padding: 16px 20px;
+          font-size: 16px;
+          padding: 18px 22px;
           outline: none;
         }
 
         .cmd-results {
-          max-height: 300px;
+          max-height: 320px;
           overflow-y: auto;
         }
 
         .cmd-empty {
-          padding: 16px 20px;
+          padding: 18px 22px;
           font-size: 13px;
-          color: #333;
+          color: var(--text-3);
         }
 
         .cmd-item {
-          padding: 12px 20px;
-          border-bottom: 1px solid #1A1A1A;
+          padding: 14px 22px;
+          border-bottom: 1px solid var(--border);
           cursor: pointer;
           transition: background 0.1s;
         }
 
-        .cmd-item:hover { background: #1A1A1A; }
+        .cmd-item:hover { background: var(--surface-2); }
 
         .cmd-item-summary {
           display: block;
-          font-size: 13px;
-          color: #D0D0D0;
-          margin-bottom: 2px;
+          font-size: 14px;
+          color: var(--text-1);
+          margin-bottom: 3px;
         }
 
         .cmd-item-meta {
-          font-size: 10px;
-          color: #444;
+          font-size: 11px;
+          color: var(--text-3);
           letter-spacing: 0.05em;
           text-transform: uppercase;
         }
 
-        /* Mobile */
-        @media (max-width: 600px) {
+        /* ─── Bottom dock (mobile) ─── */
+        .bottom-dock {
+          display: none;
+        }
+
+        /* ─── Mobile ─── */
+        @media (max-width: 640px) {
           .apai-root {
-            padding: 24px 16px 100px;
+            padding: 20px 14px 140px;
+          }
+
+          .apai-header {
+            margin-bottom: 20px;
+          }
+
+          .header-settings-link {
+            display: none; /* settings accessible via bottom dock */
           }
 
           .capture-input {
-            font-size: 16px;
-            min-height: 40vh;
-            padding-bottom: 64px;
+            font-size: 17px;
+            min-height: 130px;
+            padding: 16px 72px 16px 16px;
           }
 
           .mic-btn {
-            width: 56px;
-            height: 56px;
-            font-size: 24px;
-            bottom: 10px;
-            right: 10px;
+            width: 58px;
+            height: 58px;
+            font-size: 26px;
+            bottom: 12px;
+            right: 12px;
           }
 
           .capture-btn {
             flex: 1;
-            padding: 14px;
-            font-size: 14px;
+            padding: 16px;
+            font-size: 15px;
             text-align: center;
+          }
+
+          .capture-footer {
+            justify-content: stretch;
           }
 
           .capture-hint { display: none; }
 
-          .item-actions { display: none; }
+          .item-card {
+            padding: 14px;
+          }
+
+          .item-summary {
+            font-size: 15px;
+          }
+
+          .item-actions {
+            gap: 6px;
+          }
+
+          .action-btn {
+            font-size: 12px;
+            padding: 9px 8px;
+          }
+
+          /* Show bottom dock on mobile */
+          .bottom-dock {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: var(--surface);
+            border-top: 1px solid var(--border);
+            padding: 10px 20px;
+            padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+            z-index: 100;
+          }
+
+          /* Hide inline context picker on mobile (it's in the dock) */
+          .context-picker { display: none; }
+
+          .toast { bottom: 100px; }
         }
+
+        /* ─── Dock buttons ─── */
+        .dock-context {
+          display: flex;
+          gap: 4px;
+        }
+
+        .dock-ctx-btn {
+          background: none;
+          border: 1.5px solid transparent;
+          border-radius: 8px;
+          padding: 8px 12px;
+          font-size: 22px;
+          cursor: pointer;
+          transition: all 0.15s;
+          touch-action: manipulation;
+          line-height: 1;
+        }
+
+        .dock-ctx-btn:hover { background: var(--surface-2); }
+        .dock-ctx-btn.active { border-color: var(--accent); background: var(--accent-bg); }
+
+        .dock-settings-btn {
+          color: var(--text-3);
+          text-decoration: none;
+          font-size: 22px;
+          padding: 8px 10px;
+          border-radius: 8px;
+          transition: all 0.15s;
+          line-height: 1;
+        }
+
+        .dock-settings-btn:hover { color: var(--text-1); background: var(--surface-2); }
       `}</style>
     </main>
   )
@@ -1242,7 +1341,7 @@ function ItemCard({
   isBacklog?: boolean
 }) {
   const isTemp = item.id.startsWith('temp-')
-  const color = TYPE_COLORS[item.ai_type] || '#555'
+  const color = TYPE_COLORS[item.ai_type] || '#666666'
   const cardRef = useRef<HTMLDivElement>(null)
   const startXRef = useRef(0)
   const currentXRef = useRef(0)
@@ -1291,12 +1390,12 @@ function ItemCard({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>Færdig</span>
-      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>Arkiver</span>
-      <div>
+      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>Færdig ✓</span>
+      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>Arkiver →</span>
+      <div className="item-body">
         <div className="item-summary">{item.ai_summary || item.raw_input}</div>
         <div className="item-meta">
-          <span className="item-type" style={{ background: color + '20', color }}>
+          <span className="item-type" style={{ background: color + '18', color }}>
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
           {item.ai_context && (

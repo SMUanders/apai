@@ -15,8 +15,8 @@ const TYPE_LABELS: Record<string, string> = {
   reminder: 'Påmindelser', someday: 'Engang', none: 'Ingen handling',
 }
 const TYPE_COLORS: Record<string, string> = {
-  task: '#E8FF3C', note: '#B8B8B8', idea: '#FF9B3C',
-  reminder: '#3CDFFF', someday: '#C4B5FD', none: '#555555',
+  task: '#E8FF3C', note: '#C8C8C8', idea: '#FF9B3C',
+  reminder: '#3CDFFF', someday: '#C4B5FD', none: '#666666',
 }
 
 export default function Settings() {
@@ -58,16 +58,32 @@ export default function Settings() {
   const maxCount = stats ? Math.max(...Object.values(stats.byType), 1) : 1
 
   return (
-    <main style={{ background: '#0E0E0E', minHeight: '100vh', fontFamily: "'DM Mono','Courier New',monospace", color: '#E8E8E8' }}>
-      <div style={{ maxWidth: 680, margin: '0 auto', padding: '32px 20px 80px' }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 40 }}>
-          <span style={{ fontSize: 11, letterSpacing: '0.35em', color: '#E8FF3C', fontWeight: 700 }}>APAI</span>
-          <Link href="/" style={{ fontSize: 11, color: '#444', textDecoration: 'none', letterSpacing: '0.05em' }}>← Tilbage</Link>
+    <main style={{
+      background: '#080808',
+      minHeight: '100vh',
+      fontFamily: "'DM Mono','Courier New',monospace",
+      color: '#F0F0F0',
+      WebkitFontSmoothing: 'antialiased',
+    }}>
+      <div style={{ maxWidth: 680, margin: '0 auto', padding: '24px 18px 80px' }}>
+
+        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 }}>
+          <span style={{ fontSize: 11, letterSpacing: '0.4em', color: '#E8FF3C', fontWeight: 700, textTransform: 'uppercase' }}>
+            APAI
+          </span>
+          <Link href="/" style={{ fontSize: 12, color: '#A2A2A2', textDecoration: 'none', letterSpacing: '0.06em' }}>
+            ← Tilbage
+          </Link>
         </header>
 
         <section style={{ marginBottom: 40 }}>
-          <h2 style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', color: '#444', marginBottom: 16 }}>Handlinger</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <h2 style={{
+            fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase',
+            color: '#727272', marginBottom: 16, fontWeight: 400,
+          }}>
+            Handlinger
+          </h2>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {[
               { key: 'reprioritize', label: 'Re-prioritér indbakken', url: '/api/items/reprioritize' },
               { key: 'cleanup', label: 'Ryd op nu', url: '/api/cron/cleanup' },
@@ -78,10 +94,17 @@ export default function Settings() {
                 onClick={() => run(key, url)}
                 disabled={loading === key}
                 style={{
-                  background: 'none', border: '1px solid #222', borderRadius: 6,
-                  color: loading === key ? '#333' : '#888', fontFamily: 'inherit',
-                  fontSize: 13, padding: '10px 16px', cursor: 'pointer', textAlign: 'left',
-                  transition: 'border-color 0.15s',
+                  background: 'none',
+                  border: '1px solid #262626',
+                  borderRadius: 8,
+                  color: loading === key ? '#4A4A4A' : '#A2A2A2',
+                  fontFamily: 'inherit',
+                  fontSize: 14,
+                  padding: '14px 18px',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'border-color 0.15s, color 0.15s',
+                  touchAction: 'manipulation',
                 }}
               >
                 {loading === key ? 'Arbejder…' : label}
@@ -92,25 +115,38 @@ export default function Settings() {
 
         {stats && (
           <section style={{ marginBottom: 40 }}>
-            <h2 style={{ fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase', color: '#444', marginBottom: 16 }}>Statistik</h2>
-            <div style={{ display: 'flex', gap: 32, marginBottom: 24 }}>
+            <h2 style={{
+              fontSize: 10, letterSpacing: '0.3em', textTransform: 'uppercase',
+              color: '#727272', marginBottom: 20, fontWeight: 400,
+            }}>
+              Statistik
+            </h2>
+            <div style={{ display: 'flex', gap: 40, marginBottom: 28 }}>
               <div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#E8E8E8' }}>{stats.inbox}</div>
-                <div style={{ fontSize: 11, color: '#444', marginTop: 4 }}>i indbakken</div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: '#F0F0F0' }}>{stats.inbox}</div>
+                <div style={{ fontSize: 12, color: '#727272', marginTop: 4 }}>i indbakken</div>
               </div>
               <div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#E8FF3C' }}>{stats.doneThisWeek}</div>
-                <div style={{ fontSize: 11, color: '#444', marginTop: 4 }}>gjort denne uge</div>
+                <div style={{ fontSize: 32, fontWeight: 700, color: '#E8FF3C' }}>{stats.doneThisWeek}</div>
+                <div style={{ fontSize: 12, color: '#727272', marginTop: 4 }}>gjort denne uge</div>
               </div>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {Object.entries(stats.byType).sort((a, b) => b[1] - a[1]).map(([type, count]) => (
-                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontSize: 10, color: '#444', width: 80, letterSpacing: '0.1em' }}>{TYPE_LABELS[type] ?? type}</span>
-                  <div style={{ flex: 1, background: '#141414', borderRadius: 2, height: 6 }}>
-                    <div style={{ width: `${(count / maxCount) * 100}%`, background: TYPE_COLORS[type] ?? '#555', height: '100%', borderRadius: 2, transition: 'width 0.4s ease' }} />
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontSize: 11, color: '#A2A2A2', width: 88, letterSpacing: '0.08em' }}>
+                    {TYPE_LABELS[type] ?? type}
+                  </span>
+                  <div style={{ flex: 1, background: '#1C1C1C', borderRadius: 3, height: 7 }}>
+                    <div style={{
+                      width: `${(count / maxCount) * 100}%`,
+                      background: TYPE_COLORS[type] ?? '#555',
+                      height: '100%',
+                      borderRadius: 3,
+                      transition: 'width 0.4s ease',
+                    }} />
                   </div>
-                  <span style={{ fontSize: 11, color: '#555', width: 20, textAlign: 'right' }}>{count}</span>
+                  <span style={{ fontSize: 12, color: '#A2A2A2', width: 22, textAlign: 'right' }}>{count}</span>
                 </div>
               ))}
             </div>
@@ -120,8 +156,9 @@ export default function Settings() {
         {toast && (
           <div style={{
             position: 'fixed', bottom: 32, left: '50%', transform: 'translateX(-50%)',
-            background: '#1A1A1A', border: '1px solid #2A2A2A', borderRadius: 6,
-            padding: '10px 20px', fontSize: 13, color: '#E8FF3C',
+            background: '#1C1C1C', border: '1px solid #363636', borderRadius: 8,
+            padding: '12px 24px', fontSize: 13, color: '#E8FF3C', zIndex: 100,
+            whiteSpace: 'nowrap',
           }}>
             {toast}
           </div>

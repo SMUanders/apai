@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
 export async function POST() {
   const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()

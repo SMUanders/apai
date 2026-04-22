@@ -34,12 +34,15 @@ TYPE — vælg det skarpeste match:
   someday   = måske en dag — ikke akut, ikke besluttet
   none      = registrering, kvittering, ingen handling nødvendig
 
-PRIORITY — kalibrer præcist:
-  5 = kritisk, glem ikke, bør gøres i dag eller er forfaldet
-  4 = vigtigt, bør gøres inden for 2-3 dage
-  3 = normal — hverken presserende eller uvæsentlig
-  2 = kan let vente en uge eller mere
-  1 = someday, arkiv, lav information
+PRIORITY — kalibrer på nyttighed, ikke kun hast:
+  5 = skal handles i dag — let at glemme, blokerer noget, stærkt tidsnært eller kontekstbundet
+  4 = bør handles snart — høj praktisk nytte, reducerer mental støj, relevant i nær fremtid
+  3 = normal vigtig ting — relevant men ikke presserende
+  2 = kan vente — lavere aktuel relevans
+  1 = reference, someday/maybe, ingen reel handling nu
+
+  Opvægt: let at glemme · blokerer andet · tidsbegrænset · fjerner mental støj hurtigt
+  Nedvægt: diffust projekt · ren idé · ingen konkret næste skridt · "engang"-tanke
 
 AREA:
   smu     → Signmeup / SMU: arbejde, kunder, kode, servere, APAI-udvikling

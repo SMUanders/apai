@@ -125,7 +125,7 @@ export default function Home() {
   const [groupSuggestLoading, setGroupSuggestLoading] = useState(false)
   // Duplicate detection
   type DupItem = { id: string; ai_summary: string | null; raw_input: string }
-  const [duplicatePairs, setDuplicatePairs] = useState<{ a: DupItem; b: DupItem; score: number }[]>([])
+  const [duplicatePairs, setDuplicatePairs] = useState<{ a: DupItem; b: DupItem; score: number; reason?: string; aiConfirmed?: boolean }[]>([])
   const [dismissedPairs, setDismissedPairs] = useState<Set<string>>(new Set())
   const [aiPanelOpen, setAiPanelOpen] = useState(true)
   // Speech
@@ -405,12 +405,26 @@ export default function Home() {
     }
   }
 
-  async function suggestGroups() {
+  async function analyzeAll() {
     setGroupSuggestLoading(true)
     setGroupSuggestions([])
-    const res = await fetch('/api/items/suggest-groups', { method: 'POST' })
+    // Reset only AI-sourced duplicates, keep word-overlap ones
+    setDuplicatePairs((prev) => prev.filter((p) => !p.aiConfirmed))
+    const res = await fetch('/api/items/analyze', { method: 'POST' })
+    if (!res.ok) { setGroupSuggestLoading(false); return }
     const data = await res.json()
-    setGroupSuggestions(data.suggestions ?? [])
+    // AI duplicates get aiConfirmed flag, merge with existing word-overlap
+    const aiDups = (data.duplicates ?? []).map((d: { a: DupItem; b: DupItem; reason: string; score: number }) => ({
+      ...d,
+      aiConfirmed: true,
+    }))
+    setDuplicatePairs((prev) => {
+      // Remove word-overlap pairs that are now confirmed by AI (avoid duplication)
+      const aiIds = new Set(aiDups.map((d: { a: DupItem; b: DupItem }) => `${d.a.id}:${d.b.id}`))
+      const filtered = prev.filter((p) => !aiIds.has(`${p.a.id}:${p.b.id}`))
+      return [...aiDups, ...filtered]
+    })
+    setGroupSuggestions(data.groups ?? [])
     setGroupSuggestLoading(false)
     setAiPanelOpen(true)
   }
@@ -830,14 +844,18 @@ export default function Home() {
             <button className="ai-panel-close" onClick={() => setAiPanelOpen(false)}>×</button>
           </div>
 
-          {activeDuplicates.slice(0, 3).map((pair) => (
+          {activeDuplicates.slice(0, 4).map((pair) => (
             <div key={`${pair.a.id}:${pair.b.id}`} className="ai-insight">
-              <div className="ai-insight-tag dup-tag">≈ Mulig dublet</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div className="ai-insight-tag dup-tag">≈ Mulig dublet</div>
+                {pair.aiConfirmed && <span style={{ fontSize: 9, color: '#4A6A00', letterSpacing: '0.1em' }}>AI</span>}
+              </div>
               <div className="ai-insight-items">
                 <span className="ai-insight-text">"{pair.a.ai_summary || pair.a.raw_input}"</span>
                 <span className="ai-insight-sep">og</span>
                 <span className="ai-insight-text">"{pair.b.ai_summary || pair.b.raw_input}"</span>
               </div>
+              {pair.reason && <div className="ai-insight-subtext">{pair.reason}</div>}
               <div className="ai-insight-actions">
                 <button className="ai-action-btn" onClick={() => dismissPair(pair.a.id, pair.b.id)}>Behold begge</button>
                 <button className="ai-action-btn danger" onClick={() => archiveFromPair(pair.a.id, pair.a.id, pair.b.id)}>Arkiver første</button>
@@ -866,15 +884,15 @@ export default function Home() {
         </section>
       )}
 
-      {/* Foreslå sager — knap, vises diskret når panel er tomt/lukket */}
+      {/* AI analyse-trigger — diskret knap */}
       {(!aiPanelOpen || (activeDuplicates.length === 0 && groupSuggestions.length === 0)) && items.length >= 3 && activeFilter === 'alle' && (
         <div className="ai-trigger-row">
           <button
             className="ai-trigger-btn"
-            onClick={suggestGroups}
+            onClick={analyzeAll}
             disabled={groupSuggestLoading}
           >
-            {groupSuggestLoading ? 'Analyserer…' : '✦ Foreslå sager'}
+            {groupSuggestLoading ? 'Analyserer…' : '✦ AI Analyse'}
           </button>
           {activeDuplicates.length > 0 && !aiPanelOpen && (
             <button className="ai-trigger-btn dup" onClick={() => setAiPanelOpen(true)}>

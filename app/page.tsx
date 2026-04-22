@@ -1832,7 +1832,7 @@ export default function Home() {
           text-decoration: none;
           display: flex;
           align-items: center;
-          padding: 8px 10px;
+          padding: 8px 4px 8px 12px;
           border-radius: 8px;
           transition: all 0.15s;
         }
@@ -1890,8 +1890,8 @@ export default function Home() {
             right: 0;
             background: var(--surface);
             border-top: 1px solid var(--border);
-            padding: 10px 16px;
-            padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+            padding: 10px 20px;
+            padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
             z-index: 100;
           }
 

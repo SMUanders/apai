@@ -1,12 +1,12 @@
 export type ContextTrigger = 'home' | 'work' | 'leaving' | 'morning' | 'evening' | 'anytime'
 
 export const CONTEXT_META: Record<ContextTrigger, { icon: string; label: string }> = {
-  morning: { icon: 'Morgen',  label: 'God morgen — her er dagen' },
-  work:    { icon: 'Arbejde', label: 'På arbejde' },
-  leaving: { icon: 'På vej', label: 'På vej hjem — husk dette' },
-  evening: { icon: 'Hjemme', label: 'Hjemme — husk dette' },
-  anytime: { icon: '',        label: '' },
-  home:    { icon: 'Hjemme', label: 'Hjemme' },
+  morning: { icon: '🌅', label: 'Morgen' },
+  work:    { icon: '💼', label: 'Arbejde' },
+  leaving: { icon: '🚗', label: 'På vej hjem' },
+  evening: { icon: '🏠', label: 'Hjemme' },
+  anytime: { icon: '',   label: '' },
+  home:    { icon: '🏠', label: 'Hjemme' },
 }
 
 export function detectCurrentContext(): ContextTrigger {

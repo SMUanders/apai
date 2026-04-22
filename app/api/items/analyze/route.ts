@@ -2,17 +2,25 @@ import { NextResponse } from 'next/server'
 import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
-// Haiku: ~5x hurtigere end Sonnet, tilstrækkelig kvalitet til gruppering/dedup
-const FAST_MODEL = 'claude-haiku-4-5-20251001'
+const OAI_MODEL = 'gpt-4o-mini'
 const MAX_ITEMS = 25
 const MAX_TOKENS = 600
 
-// Kort prompt — eksempler fjernet, kun regler
-const SYSTEM = `Analysér en dansk opgaveliste. Returner KUN JSON:
-{"duplicates":[{"a_id":"id","b_id":"id","reason":"dansk sætning"}],"groups":[{"label":"2-4 ord","item_ids":["id"],"reasoning":"dansk sætning"}]}
-Dublet = samme ærinde/handling med andre ord. Kun hvis du er sikker. Max 3 par.
-Gruppe = fælles projekt/sag. Min 2 items. Max 5 grupper. Ignorer items med group_label.
-Vær konservativ. Kun JSON — ingen markdown.`
+const SYSTEM = `Analysér en dansk opgaveliste. Returner UDELUKKENDE dette JSON-objekt:
+{"duplicates":[{"a_id":"id","b_id":"id","reason":"én dansk sætning"}],"groups":[{"label":"2-4 ord","item_ids":["id","id"],"reasoning":"én dansk sætning"}]}
+
+DUBLETTER — kun hvis du er helt sikker:
+- Samme konkrete handling beskrevet med forskellige ord
+- Aldrig: samme emne men forskellig handling, eller generelt vs. specifikt
+- Max 3 par
+
+GRUPPER — kun oplagte projektsammenhænge:
+- Min 2 items der tydeligt tilhører samme sag/projekt/opgave
+- Ignorer items der allerede har group_label
+- Max 4 grupper
+- Vær konservativ: hellere ingen forslag end tvivlsomme
+
+Returner {"duplicates":[],"groups":[]} hvis ingen sikre fund. Kun JSON.`
 
 export async function POST() {
   const t0 = Date.now()
@@ -49,7 +57,7 @@ export async function POST() {
 
   let text: string
   try {
-    text = await complete(SYSTEM, JSON.stringify(input), MAX_TOKENS, FAST_MODEL)
+    text = await complete(SYSTEM, JSON.stringify(input), MAX_TOKENS, OAI_MODEL, 'openai')
   } catch (err) {
     const tAi = Date.now()
     console.error(`[analyze] AI fejlede efter ${tAi - tBuild}ms:`, err)

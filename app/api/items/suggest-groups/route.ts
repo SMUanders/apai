@@ -2,23 +2,19 @@ import { NextResponse } from 'next/server'
 import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
-const SYSTEM = `Du er en assistent der finder sammenhængende opgaver i en opgaveliste.
+const SYSTEM = `Du finder sammenhængende opgaver i en dansk opgaveliste.
 
-Du får en liste af items. Find items der naturligt hører til samme sag, projekt eller tema.
-
-Returner KUN gyldig JSON — array af forslag:
-[{
-  "label": "kort sagsnavn (2-5 ord, dansk)",
-  "item_ids": ["id1", "id2"],
-  "reasoning": "én sætning på dansk"
-}]
+Returner UDELUKKENDE et JSON-array:
+[{"label":"2-4 ord dansk sagsnavn","item_ids":["id1","id2"],"reasoning":"én sætning"}]
 
 Regler:
-- Foreslå kun grupper med mindst 2 items
-- Vær konservativ — hellere færre grupper end mange
-- Ignorer items der allerede har group_label
-- Max 6 grupper
-- Returner tom array [] hvis ingen oplagte grupper`
+- Kun grupper med minimum 2 items der tydeligt tilhører samme projekt/sag
+- Vær konservativ: hellere 0 forslag end tvivlsomme
+- Ignorer items med group_label
+- Max 5 grupper
+- Returner [] hvis ingen oplagte grupper
+
+Kun JSON-array.`
 
 export async function POST() {
   const { data: items, error } = await supabase
@@ -37,7 +33,7 @@ export async function POST() {
     .map((i) => ({ id: i.id, summary: i.ai_summary || i.raw_input, type: i.ai_type }))
 
   try {
-    const text = await complete(SYSTEM, JSON.stringify(input), 1000)
+    const text = await complete(SYSTEM, JSON.stringify(input), 1000, 'gpt-4o', 'openai')
     const suggestions = JSON.parse(text.replace(/```json|```/g, '').trim())
     return NextResponse.json({ suggestions })
   } catch {

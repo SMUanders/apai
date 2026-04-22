@@ -2,25 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
-const SYSTEM_PROMPT = `Du er APAI's opdateringsassistent.
+const SYSTEM_PROMPT = `Du opdaterer et eksisterende APAI-item baseret på brugerens instruktion.
 
-Du får et eksisterende item og brugerens fritekst-opdatering.
-Fortolk opdateringsteksten og returner hvad der skal ændres på itemet.
-
-Returner KUN gyldig JSON:
+Returner UDELUKKENDE JSON:
 {
-  "ai_type": "task|note|idea|reminder|someday|none" eller null,
-  "ai_summary": "ny kort titel max 10 ord" eller null,
-  "ai_priority": 1-5 eller null,
-  "context_trigger": "work|home|morning|evening|leaving|anytime" eller null,
-  "changes": ["kort dansk ændringsbeskrivelse"]
+  "ai_type": "task|note|idea|reminder|someday|none" — eller null hvis uændret,
+  "ai_summary": "aktiv sætning max 10 ord" — eller null hvis uændret,
+  "ai_priority": 1-5 — eller null hvis uændret,
+  "context_trigger": "work|home|morning|evening|leaving|anytime" — eller null hvis uændret,
+  "changes": ["hvad ændrede du, konkret dansk, max 3 punkter"]
 }
 
-Regler:
-- null = feltet er uændret
-- changes = liste med hvad du ændrer (max 3 punkter, dansk, konkret)
-- Fortolk frit: "venter på svar" → waiting/note, "hæv" → højere prioritet, "ikke vigtigt" → priority 1 osv.
-- Bevar eksisterende summary hvis den stadig passer — opdatér ellers`
+Fortolkningsregler:
+- "venter på svar fra X" → type: note, summary opdateres
+- "hæv" / "mere vigtigt" → +1 prioritet
+- "ikke vigtigt" / "kan vente" → prioritet 1-2
+- "gjort" / "færdig" → type: none
+- Bevar summary hvis den stadig er dækkende — ret ellers
+
+null = uændret. Kun JSON.`
 
 export async function POST(
   req: NextRequest,
@@ -45,7 +45,7 @@ export async function POST(
 
   try {
     const userMsg = `Item:\nType: ${current.ai_type}\nTitel: ${current.ai_summary}\nPrioritet: ${current.ai_priority}\nKontekst: ${current.context_trigger ?? 'ingen'}\n\nOpdatering: ${update_text}`
-    const text = await complete(SYSTEM_PROMPT, userMsg, 300)
+    const text = await complete(SYSTEM_PROMPT, userMsg, 300, 'gpt-4o-mini', 'openai')
     parsed = JSON.parse(text.replace(/```json|```/g, '').trim())
   } catch {
     return NextResponse.json({ error: 'AI fejlede' }, { status: 500 })

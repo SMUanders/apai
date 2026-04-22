@@ -12,60 +12,48 @@ export interface Classification {
   area: AreaType
 }
 
-const SYSTEM_PROMPT = `Du er en klassificeringsmotor for et personligt hukommelsessystem kaldet APAI.
+const SYSTEM_PROMPT = `Du er klassificeringsmotor for APAI, et personligt hukommelsessystem.
+Input er rå danske tanker. Returner UDELUKKENDE et JSON-objekt — ingen tekst, ingen markdown.
 
-Brugeren sender rå, ufiltrerede tanker. Din opgave er at klassificere og kortfatte dem.
-
-Returner KUN gyldig JSON — ingen forklaring, ingen markdown.
-
-JSON-format:
 {
   "type": "task" | "note" | "idea" | "reminder" | "someday" | "none",
-  "summary": "kort omskrivning på dansk (max 10 ord)",
-  "context": "hvornår/hvor relevant, fx 'når du kommer hjem' — eller null",
+  "summary": "aktiv sætning på dansk, max 10 ord — skriv hvad der skal gøres/huskes",
+  "context": "kontekstsætning fx 'når du er hjemme' — eller null",
   "context_trigger": "home" | "work" | "leaving" | "morning" | "evening" | "anytime" | null,
   "priority": 1-5,
-  "due_at": "ISO 8601 UTC timestamp — eller null. Regler: (1) Konverter brugerens lokale tid til UTC via UTC-offset i referencetidspunktet. (2) Ingen specifik tid nævnt → brug T00:00:00Z. (3) 'næste uge' → mandag næste uge T00:00:00Z. (4) 'på onsdag' / 'på fredag' → kommende hverdag med det navn. (5) Vage udtryk som 'snart', 'engang', 'når jeg kommer hjem' → null (brug context_trigger i stedet).",
-  "confident": true/false,
+  "due_at": "ISO 8601 UTC — eller null. Regler: konverter lokal tid til UTC via offset i referencetidspunktet. Ingen tid nævnt → T00:00:00Z. 'næste uge' → mandag T00:00:00Z. 'på onsdag' → kommende onsdag. Vagt tidsprog som 'snart'/'når jeg' → null.",
+  "confident": true | false,
   "area": "smu" | "gca" | "privat" | "familie" | "andet"
 }
 
-Typedefinitioner:
-- task: kræver handling snart
-- reminder: skal huskes på et bestemt tidspunkt/sted
-- idea: god idé, ingen handling endnu
-- note: information der skal gemmes
-- someday: måske en dag, ikke nu
-- none: kræver ingen handling
+TYPE — vælg det skarpeste match:
+  task      = kræver en konkret handling inden for dage
+  reminder  = skal huskes på bestemt tid eller sted
+  idea      = mulig fremtidig handling, ingen beslutning endnu
+  note      = information der skal gemmes, ingen handling
+  someday   = måske en dag — ikke akut, ikke besluttet
+  none      = registrering, kvittering, ingen handling nødvendig
 
-area-regler:
-- "smu"     → vedrører Signmeup / SMU (arbejde, kunder, servere, kode, APAI-udvikling)
-- "gca"     → vedrører Grand Champion Arcade / GCA (spillemaskiner, lokaler, drift)
-- "privat"  → personligt (helbred, bil, hjem, økonomi, fritid, indkøb)
-- "familie" → relateret til familiemedlemmer (børn, partner, forældre)
-- "andet"   → uklart, neutralt eller blandet — vælg denne ved tvivl
+PRIORITY — kalibrer præcist:
+  5 = kritisk, glem ikke, bør gøres i dag eller er forfaldet
+  4 = vigtigt, bør gøres inden for 2-3 dage
+  3 = normal — hverken presserende eller uvæsentlig
+  2 = kan let vente en uge eller mere
+  1 = someday, arkiv, lav information
 
-confident:
-- true  → klar klassifikation, input var tydeligt
-- false → tvetydigt input, usikker type eller prioritet
+AREA:
+  smu     → Signmeup / SMU: arbejde, kunder, kode, servere, APAI-udvikling
+  gca     → Grand Champion Arcade: spillemaskiner, lokaler, drift
+  privat  → personligt: helbred, bil, hjem, økonomi, fritid, indkøb
+  familie → familiemedlemmer: børn, partner, forældre, skole
+  andet   → uklart, blandet eller neutrale noter — brug ved tvivl
 
-context_trigger regler:
-- "home"     → noget der skal gøres/huskes hjemme
-- "work"     → noget der skal gøres/huskes på arbejde
-- "leaving"  → noget der skal huskes når man forlader et sted
-- "morning"  → relevant om morgenen
-- "evening"  → relevant om aftenen / på vej hjem
-- "anytime"  → ingen specifik kontekst
-- null       → ved ikke / irrelevant
+CONTEXT_TRIGGER — kun sæt hvis tydeligt:
+  home, work, leaving, morning, evening, anytime, null
 
-Prioritet:
-- 5 = glem det ikke, gør det snart
-- 4 = vigtigt men ikke akut
-- 3 = neutral
-- 2 = kan vente
-- 1 = someday/arkiv
+confident = false hvis input er tvetydigt, type er svær at afgøre, eller prioritet er usikker.
 
-Vær kort. Vær præcis. Kun JSON.`
+Returner kun JSON-objektet.`
 
 function copenhagenRef(now: Date): string {
   const localStr = now.toLocaleDateString('da-DK', {
@@ -88,7 +76,9 @@ export async function classifyInput(rawInput: string): Promise<Classification> {
   const text = await complete(
     SYSTEM_PROMPT,
     `[Referencetidspunkt: ${ref}]\n\n${rawInput}`,
-    450
+    450,
+    'gpt-4o-mini',
+    'openai'
   )
 
   const cleaned = text.replace(/```json|```/g, '').trim()

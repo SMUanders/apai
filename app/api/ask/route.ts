@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     .map((item, idx) => `[${idx}] ${item.ai_summary || item.raw_input} (${item.ai_type}, prio ${item.ai_priority})`)
     .join('\n')
 
-  const text = await complete(SYSTEM, `Mine items:\n${itemsText || '(ingen items)'}\n\nSpørgsmål: ${question}`, 500)
+  const text = await complete(SYSTEM, `Mine items:\n${itemsText || '(ingen items)'}\n\nSpørgsmål: ${question}`, 500, 'gpt-4o', 'openai')
   const cleaned = text.replace(/```json|```/g, '').trim()
   const parsed = JSON.parse(cleaned)
 

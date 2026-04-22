@@ -2,20 +2,28 @@ import { NextResponse } from 'next/server'
 import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
-const SYSTEM_PROMPT = `Du er en prioriteringsassistent. Du får en liste over items med id, raw_input, ai_type, ai_priority og created_at.
+const SYSTEM_PROMPT = `Du er prioriteringsassistent for APAI. Du får inbox-items med id, raw_input, ai_type, ai_priority og created_at.
 
-Returner KUN gyldig JSON — array af objekter:
-[{ "id": "uuid", "ai_priority": 1-5, "ai_type": "task|note|idea|reminder|someday|none" }]
+Returner UDELUKKENDE et JSON-array — alle items inkl. uændrede:
+[{"id":"uuid","ai_priority":1-5,"ai_type":"task|note|idea|reminder|someday|none"}]
 
-Regler:
-- Items der er mere end 7 dage gamle og stadig ikke gjort: sænk prioritet med 1 (de er åbenbart ikke så vigtige)
-- Reminders med kontekst der matcher nu: hæv til 5
-- Opgaver der ligner noget der burde gøres snart: prioritet 4
-- Idéer og someday: max prioritet 2 medmindre de virker ekstraordinære
-- Notes: prioritet 1-2
-- Vær ikke bange for at ændre ai_type hvis raw_input åbenlyst er forkert klassificeret
+PRIORITET — kalibrér præcist:
+  5 = kritisk, bør gøres i dag
+  4 = vigtigt, bør gøres inden for 2-3 dage
+  3 = normal — hverken presserende eller uvæsentlig
+  2 = kan vente en uge eller mere
+  1 = someday, arkiv, lav information
 
-Returner alle items — også dem du ikke ændrer.`
+REGLER:
+- Item ældre end 7 dage og ikke gjort → sænk prioritet med 1 (max én gang)
+- Reminders med konteksttrigger der matcher nu → prioritet 5
+- Idéer og someday: aldrig over prioritet 2 medmindre ekstraordinært
+- Notes: aldrig over prioritet 2
+- Ret ai_type kun hvis raw_input åbenlyst er forkert klassificeret
+- Ændr kun prioritet hvis du er sikker — tvivl → behold eksisterende
+- Returner ALLE items, også uændrede
+
+Kun JSON-array.`
 
 export async function POST() {
   const { data: items, error } = await supabase
@@ -26,7 +34,7 @@ export async function POST() {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!items?.length) return NextResponse.json({ updated: 0, changes: [] })
 
-  const text = await complete(SYSTEM_PROMPT, JSON.stringify(items), 2000)
+  const text = await complete(SYSTEM_PROMPT, JSON.stringify(items), 2000, 'gpt-4o', 'openai')
   const cleaned = text.replace(/```json|```/g, '').trim()
   const newPriorities: { id: string; ai_priority: number; ai_type: string }[] = JSON.parse(cleaned)
 

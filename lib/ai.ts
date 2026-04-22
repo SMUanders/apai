@@ -32,7 +32,7 @@ export async function complete(
   providerOverride?: 'anthropic' | 'openai'
 ): Promise<string> {
   const provider = providerOverride ?? PROVIDER
-  if (provider === 'openai') return completeOpenAI(system, user, maxTokens)
+  if (provider === 'openai') return completeOpenAI(system, user, maxTokens, modelOverride)
   return completeAnthropic(system, user, maxTokens, modelOverride)
 }
 
@@ -50,8 +50,8 @@ async function completeAnthropic(system: string, user: string, maxTokens: number
     .join('')
 }
 
-async function completeOpenAI(system: string, user: string, maxTokens: number): Promise<string> {
-  const model = MODEL_OVERRIDE ?? DEFAULT_MODEL.openai
+async function completeOpenAI(system: string, user: string, maxTokens: number, modelOverride?: string): Promise<string> {
+  const model = modelOverride ?? MODEL_OVERRIDE ?? DEFAULT_MODEL.openai
   const res = await openai().chat.completions.create({
     model,
     max_tokens: maxTokens,

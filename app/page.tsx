@@ -623,17 +623,6 @@ export default function Home() {
       }
     })
 
-    // Keep same-group items adjacent (secondary stable sort by group_label)
-    if (activeFilter !== 'sager') {
-      result.sort((a, b) => {
-        if (!a.group_label && !b.group_label) return 0
-        if (!a.group_label) return 1
-        if (!b.group_label) return -1
-        if (a.group_label === b.group_label) return 0
-        return 0 // different groups: preserve priority order
-      })
-    }
-
     return result
   }, [items, activeFilter, activeSort, sortDir, searchQuery])
 

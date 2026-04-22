@@ -12,6 +12,7 @@ export interface Classification {
   context_trigger: ContextTrigger | null
   priority: number
   due_at: string | null
+  confident: boolean
 }
 
 const SYSTEM_PROMPT = `Du er en klassificeringsmotor for et personligt hukommelsessystem kaldet APAI.
@@ -27,7 +28,8 @@ JSON-format:
   "context": "hvornår/hvor relevant, fx 'når du kommer hjem' — eller null",
   "context_trigger": "home" | "work" | "leaving" | "morning" | "evening" | "anytime" | null,
   "priority": 1-5,
-  "due_at": "ISO 8601 timestamp hvis teksten nævner en konkret dato eller tid — ellers null. Brug referencedatoen til at beregne relative udtryk som 'på lørdag', 'kl 14', 'i morgen tidlig', 'om 3 dage', 'næste uge'. Hvis kun tidspunkt er nævnt uden dato, brug referencedatoen. Returner altid UTC."
+  "due_at": "ISO 8601 timestamp hvis teksten nævner en konkret dato eller tid — ellers null. Brug referencedatoen til at beregne relative udtryk som 'på lørdag', 'kl 14', 'i morgen tidlig', 'om 3 dage', 'næste uge'. Returner altid UTC.",
+  "confident": true/false
 }
 
 Typedefinitioner:
@@ -37,6 +39,10 @@ Typedefinitioner:
 - note: information der skal gemmes
 - someday: måske en dag, ikke nu
 - none: kræver ingen handling
+
+confident:
+- true  → klar klassifikation, input var tydeligt
+- false → tvetydigt input, usikker type eller prioritet
 
 context_trigger regler:
 - "home"     → noget der skal gøres/huskes hjemme
@@ -81,5 +87,6 @@ export async function classifyInput(rawInput: string): Promise<Classification> {
     context_trigger: parsed.context_trigger || null,
     priority: Number(parsed.priority),
     due_at: parsed.due_at || null,
+    confident: parsed.confident !== false,
   }
 }

@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 import { classifyInput } from '@/lib/classify'
 
-// GET /api/items — hent alle inbox-items, sorteret efter prioritet
 export async function GET() {
   const { data, error } = await supabase
     .from('items')
@@ -25,7 +24,6 @@ function similarity(a: string, b: string): number {
   return overlap / Math.max(wordsA.size, wordsB.length)
 }
 
-// POST /api/items — modtag rå input, klassificér og gem
 export async function POST(req: NextRequest) {
   const body = await req.json()
   const { raw_input, force } = body as { raw_input: string; force?: boolean }
@@ -34,7 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Mangler input' }, { status: 400 })
   }
 
-  // Duplikat-tjek (medmindre brugeren har force-accept)
+  // Duplikat-tjek
   if (!force) {
     const { data: recent } = await supabase
       .from('items')
@@ -53,19 +51,24 @@ export async function POST(req: NextRequest) {
 
   // Klassificér med AI
   let classification
+  let classifyFailed = false
+
   try {
     classification = await classifyInput(raw_input)
   } catch {
-    // Fallback hvis Claude fejler
+    classifyFailed = true
     classification = {
-      type: 'note' as const,
+      type: 'none' as const,
       summary: raw_input.slice(0, 80),
-      context: null,
+      context: '__review__',   // markør: skal gennemses
       context_trigger: null,
-      priority: 3,
+      priority: 2,
       due_at: null,
+      confident: false,
     }
   }
+
+  const confident = !classifyFailed && (classification.confident !== false)
 
   const baseInsert = {
     raw_input: raw_input.trim(),
@@ -77,7 +80,7 @@ export async function POST(req: NextRequest) {
     status: 'inbox',
   }
 
-  // Forsøg med due_at — falder tilbage uden hvis kolonnen ikke eksisterer endnu
+  // Forsøg med due_at — falder tilbage uden hvis kolonnen ikke eksisterer
   let result = await supabase
     .from('items')
     .insert({ ...baseInsert, due_at: classification.due_at })
@@ -89,5 +92,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (result.error) return NextResponse.json({ error: result.error.message }, { status: 500 })
-  return NextResponse.json(result.data, { status: 201 })
+
+  // Returner item + confident-flag (ikke gemt i DB, bruges kun til UI-feedback)
+  return NextResponse.json({ ...result.data, confident }, { status: 201 })
 }

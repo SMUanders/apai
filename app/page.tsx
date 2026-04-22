@@ -67,6 +67,7 @@ const FILTERS = [
   { id: 'idea', label: 'Idéer' },
   { id: 'med-dato', label: 'Med dato' },
   { id: 'hoj-prioritet', label: 'Høj prioritet' },
+  { id: 'review', label: '⚑ Review' },
 ]
 
 const SORTS = [
@@ -113,6 +114,9 @@ export default function Home() {
   // Historik
   const [historyItems, setHistoryItems] = useState<Item[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
+  // Capture result
+  const [captureResult, setCaptureResult] = useState<{ item: Item; confident: boolean } | null>(null)
+  const captureResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Speech
   const [speaking, setSpeaking] = useState(false)
 
@@ -315,7 +319,10 @@ export default function Home() {
     }
 
     setItems((prev) => prev.map((i) => (i.id === optimisticId ? data : i)))
-    showToast('✓ Gemt')
+    const confident = data.confident !== false
+    setCaptureResult({ item: data, confident })
+    if (captureResultTimer.current) clearTimeout(captureResultTimer.current)
+    captureResultTimer.current = setTimeout(() => setCaptureResult(null), 5000)
     setClassifying(false)
   }
 
@@ -549,6 +556,7 @@ export default function Home() {
     else if (activeFilter === 'idea') result = result.filter((i) => i.ai_type === 'idea')
     else if (activeFilter === 'med-dato') result = result.filter((i) => i.due_at)
     else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4)
+    else if (activeFilter === 'review') result = result.filter((i) => i.ai_type === 'none' || i.ai_context === '__review__')
 
     result = [...result].sort((a, b) => {
       if (activeSort === 'prioritet') {
@@ -629,6 +637,36 @@ export default function Home() {
           </button>
         </div>
       </section>
+
+      {/* Capture result */}
+      {captureResult && (() => {
+        const { item, confident } = captureResult
+        const color = TYPE_COLORS[item.ai_type] || '#555'
+        const needsReview = item.ai_type === 'none' || item.ai_context === '__review__'
+        return (
+          <div className="capture-result">
+            <div className="capture-result-top">
+              <div className="capture-result-badges">
+                <span className="item-type" style={{ background: color + '20', color, fontSize: 11 }}>
+                  {TYPE_LABELS[item.ai_type] || 'Ukendt'}
+                </span>
+                <span className="item-priority">{PRIORITY_DOT(item.ai_priority)}</span>
+                {!confident && <span className="review-badge">usikker</span>}
+                {needsReview && confident && <span className="review-badge">til review</span>}
+              </div>
+              <button className="capture-result-dismiss" onClick={() => setCaptureResult(null)}>×</button>
+            </div>
+            <div className="capture-result-summary">
+              {item.ai_summary && item.ai_summary !== '...' ? item.ai_summary : item.raw_input}
+            </div>
+            {item.due_at && (
+              <div className="item-due" style={{ marginTop: 8, display: 'inline-block' }}>
+                {formatDueAt(item.due_at)}
+              </div>
+            )}
+          </div>
+        )
+      })()}
 
       {/* Filter + Sort + Search */}
       <div className="filter-row">
@@ -1277,6 +1315,64 @@ export default function Home() {
 
         .search-clear:hover { color: var(--text-2); }
 
+        /* Capture result card */
+        .capture-result {
+          background: var(--surface);
+          border: 1.5px solid var(--accent);
+          border-radius: var(--radius);
+          padding: 14px 16px;
+          margin-bottom: 20px;
+          animation: slideIn 0.18s ease;
+        }
+
+        @keyframes slideIn {
+          from { opacity: 0; transform: translateY(-6px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .capture-result-top {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-bottom: 8px;
+        }
+
+        .capture-result-badges {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+
+        .capture-result-summary {
+          font-size: 15px;
+          color: var(--text-1);
+          line-height: 1.5;
+        }
+
+        .capture-result-dismiss {
+          background: none;
+          border: none;
+          color: var(--text-3);
+          font-size: 18px;
+          line-height: 1;
+          cursor: pointer;
+          padding: 0 0 0 8px;
+          flex-shrink: 0;
+          touch-action: manipulation;
+        }
+
+        .review-badge {
+          font-size: 9px;
+          letter-spacing: 0.12em;
+          text-transform: uppercase;
+          color: var(--danger);
+          border: 1px solid var(--danger);
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-weight: 600;
+        }
+
         .section-label {
           font-size: 10px;
           letter-spacing: 0.3em;
@@ -1889,9 +1985,14 @@ function ItemCard({
           <span className="item-type" style={{ background: color + '20', color }}>
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
-          {item.ai_context && <span className="item-context">↳ {item.ai_context}</span>}
+          {item.ai_context && item.ai_context !== '__review__' && (
+            <span className="item-context">↳ {item.ai_context}</span>
+          )}
           {item.due_at && <span className="item-due">{formatDueAt(item.due_at)}</span>}
           <span className="item-priority">{PRIORITY_DOT(item.ai_priority)}</span>
+          {(item.ai_type === 'none' || item.ai_context === '__review__') && (
+            <span className="review-badge">til review</span>
+          )}
         </div>
         {item.ai_summary && item.ai_summary !== item.raw_input && (
           <div className="item-raw">{item.raw_input}</div>

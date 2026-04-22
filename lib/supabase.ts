@@ -21,4 +21,5 @@ export interface Item {
   status: ItemStatus
   created_at: string
   updated_at: string
+  confident?: boolean  // kun til stede i API-svar, ikke gemt i DB
 }

@@ -144,6 +144,9 @@ export default function Home() {
   const captureResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Briefing modal
   const [briefOpen, setBriefOpen] = useState(false)
+  const [briefCompareMode, setBriefCompareMode] = useState(false)
+  const [compareResult, setCompareResult] = useState<{ anthropic: string; openai: string; itemCount: number } | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
   // Group suggestions
   const [groupSuggestions, setGroupSuggestions] = useState<{ label: string; item_ids: string[]; reasoning: string }[]>([])
   // Duplicate detection
@@ -264,6 +267,23 @@ export default function Home() {
     setBriefTime(
       new Date().toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' })
     )
+  }
+
+  async function runCompare(type: string) {
+    setCompareLoading(true)
+    setCompareResult(null)
+    setBriefType(type)
+    try {
+      const res = await fetch('/api/brief/compare', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type }),
+      })
+      const data = await res.json()
+      if (res.ok) setCompareResult(data)
+    } finally {
+      setCompareLoading(false)
+    }
   }
 
   function toggleSpeak() {
@@ -1229,8 +1249,18 @@ export default function Home() {
           <div className="brief-modal" onClick={(e) => e.stopPropagation()}>
             <div className="brief-modal-header">
               <span className="brief-modal-title">Briefing</span>
-              <button className="modal-close-btn" onClick={() => setBriefOpen(false)}>×</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button
+                  className={`brief-mode-toggle ${briefCompareMode ? 'active' : ''}`}
+                  onClick={() => { setBriefCompareMode((m) => !m); setCompareResult(null); setBriefText(''); setBriefType(null) }}
+                  title="A/B: sammenlign Claude og GPT-4o side om side"
+                >
+                  A/B
+                </button>
+                <button className="modal-close-btn" onClick={() => setBriefOpen(false)}>×</button>
+              </div>
             </div>
+
             <div className="brief-btns">
               {[
                 ['leaving_home', 'På vej på arbejde'],
@@ -1242,14 +1272,16 @@ export default function Home() {
                 <button
                   key={t}
                   className={`brief-btn ${briefType === t ? 'active' : ''} ${t === 'focus' ? 'brief-btn-focus' : ''}`}
-                  onClick={() => generateBrief(t)}
-                  disabled={briefLoading}
+                  onClick={() => briefCompareMode ? runCompare(t) : generateBrief(t)}
+                  disabled={briefLoading || compareLoading}
                 >
                   {label}
                 </button>
               ))}
             </div>
-            {(briefLoading || briefText) && (
+
+            {/* Normal mode */}
+            {!briefCompareMode && (briefLoading || briefText) && (
               <div className="brief-box">
                 <p className="brief-text">
                   {briefText}
@@ -1265,8 +1297,29 @@ export default function Home() {
                 </div>
               </div>
             )}
-            {!briefText && !briefLoading && (
+            {!briefCompareMode && !briefText && !briefLoading && (
               <p className="brief-empty">Vælg situation for en kort briefing.</p>
+            )}
+
+            {/* A/B compare mode */}
+            {briefCompareMode && compareLoading && (
+              <p className="brief-empty">Spørger begge modeller…<span className="brief-cursor">▌</span></p>
+            )}
+            {briefCompareMode && !compareLoading && !compareResult && (
+              <p className="brief-empty">Vælg situation for at sammenligne Claude og GPT-4o.</p>
+            )}
+            {briefCompareMode && compareResult && (
+              <div className="compare-panels">
+                <div className="compare-panel">
+                  <div className="compare-label">Claude Sonnet</div>
+                  <p className="brief-text">{compareResult.anthropic}</p>
+                </div>
+                <div className="compare-panel">
+                  <div className="compare-label">GPT-4o</div>
+                  <p className="brief-text">{compareResult.openai}</p>
+                </div>
+                <p className="compare-meta">{compareResult.itemCount} items brugt som input</p>
+              </div>
             )}
           </div>
         </div>
@@ -2318,6 +2371,54 @@ export default function Home() {
           font-size: 12px;
           color: var(--text-3);
           letter-spacing: 0.02em;
+        }
+
+        .brief-mode-toggle {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: 6px;
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 10px;
+          letter-spacing: 0.12em;
+          padding: 4px 8px;
+          cursor: pointer;
+          touch-action: manipulation;
+          transition: all 0.15s;
+        }
+        .brief-mode-toggle.active {
+          border-color: var(--accent);
+          color: var(--accent);
+          background: var(--accent-bg);
+        }
+
+        .compare-panels {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .compare-panel {
+          background: var(--surface);
+          border: 1px solid var(--border);
+          border-radius: var(--radius);
+          padding: 14px 16px;
+        }
+
+        .compare-label {
+          font-size: 10px;
+          letter-spacing: 0.2em;
+          text-transform: uppercase;
+          color: var(--text-3);
+          margin-bottom: 8px;
+          font-weight: 600;
+        }
+
+        .compare-meta {
+          font-size: 11px;
+          color: var(--text-3);
+          text-align: center;
+          margin-top: 4px;
         }
 
         /* Toast */

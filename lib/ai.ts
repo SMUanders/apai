@@ -28,9 +28,11 @@ export async function complete(
   system: string,
   user: string,
   maxTokens = 400,
-  modelOverride?: string
+  modelOverride?: string,
+  providerOverride?: 'anthropic' | 'openai'
 ): Promise<string> {
-  if (PROVIDER === 'openai') return completeOpenAI(system, user, maxTokens)
+  const provider = providerOverride ?? PROVIDER
+  if (provider === 'openai') return completeOpenAI(system, user, maxTokens)
   return completeAnthropic(system, user, maxTokens, modelOverride)
 }
 

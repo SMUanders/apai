@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { Mic, Square, Settings, Search, X, Volume2, VolumeX } from 'lucide-react'
+import { Mic, Square, Settings, Search, X, Volume2, VolumeX, Sun } from 'lucide-react'
 import { Item } from '@/lib/supabase'
 import {
   ContextTrigger,
@@ -117,6 +117,8 @@ export default function Home() {
   // Capture result
   const [captureResult, setCaptureResult] = useState<{ item: Item; confident: boolean } | null>(null)
   const captureResultTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Briefing modal
+  const [briefOpen, setBriefOpen] = useState(false)
   // Speech
   const [speaking, setSpeaking] = useState(false)
 
@@ -369,6 +371,10 @@ export default function Home() {
     setBacklogItems((prev) => [updated, ...prev])
   }
 
+  function handleItemUpdate(id: string, updatedItem: Item) {
+    setItems((prev) => prev.map((i) => (i.id === id ? updatedItem : i)))
+  }
+
   async function moveToInbox(id: string) {
     setBacklogItems((prev) => prev.filter((i) => i.id !== id))
     const res = await fetch(`/api/items/${id}`, {
@@ -587,14 +593,22 @@ export default function Home() {
     <main className="apai-root">
       <header className="apai-header">
         <span className="apai-logo">APAI</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <span className="apai-count">{items.length} i indbakken</span>
+          <button
+            className="header-icon-btn"
+            onClick={() => setBriefOpen(true)}
+            title="Briefing"
+            aria-label="Åbn briefing"
+          >
+            <Sun size={15} />
+          </button>
           <Link
             href="/settings"
-            style={{ color: '#555', textDecoration: 'none', display: 'flex', alignItems: 'center' }}
+            className="header-icon-btn"
             title="Indstillinger"
           >
-            <Settings size={16} />
+            <Settings size={15} />
           </Link>
         </div>
       </header>
@@ -743,6 +757,7 @@ export default function Home() {
                 onDone={markDone}
                 onArchive={archive}
                 onBacklog={moveToBacklog}
+                onUpdate={handleItemUpdate}
               />
             ))}
           </div>
@@ -769,6 +784,7 @@ export default function Home() {
                 onDone={markDone}
                 onArchive={archive}
                 onBacklog={moveToBacklog}
+                onUpdate={handleItemUpdate}
               />
             ))}
           </div>
@@ -801,6 +817,7 @@ export default function Home() {
                   onDone={markDone}
                   onArchive={archive}
                   onBacklog={moveToInbox}
+                  onUpdate={handleItemUpdate}
                   isBacklog
                 />
               ))}
@@ -847,55 +864,53 @@ export default function Home() {
       )}
 
 
-      {/* Brief */}
-      <section className="brief-section">
-        <div className="brief-btns">
-          {[
-            ['morning', 'Morgen'],
-            ['midday', 'Middag'],
-            ['afternoon', 'Eftermiddag'],
-            ['shutdown', 'Shutdown'],
-          ].map(([t, label]) => (
-            <button
-              key={t}
-              className={`brief-btn ${briefType === t ? 'active' : ''}`}
-              onClick={() => generateBrief(t)}
-              disabled={briefLoading}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        {(briefLoading || briefText) && (
-          <div className="brief-box">
-            <p className="brief-text">
-              {briefText}
-              {briefLoading && <span className="brief-cursor">▌</span>}
-            </p>
-            <div className="brief-footer">
-              {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
-              {briefText && !briefLoading && (
-                <button className="speak-btn" onClick={toggleSpeak}>
-                  {speaking ? (
-                    <>
-                      <VolumeX size={13} />
-                      <span>Stop</span>
-                    </>
-                  ) : (
-                    <>
-                      <Volume2 size={13} />
-                      <span>Oplæs</span>
-                    </>
-                  )}
-                </button>
-              )}
+      {/* Briefing modal */}
+      {briefOpen && (
+        <div className="modal-overlay" onClick={() => setBriefOpen(false)}>
+          <div className="brief-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="brief-modal-header">
+              <span className="brief-modal-title">Briefing</span>
+              <button className="modal-close-btn" onClick={() => setBriefOpen(false)}>×</button>
             </div>
+            <div className="brief-btns">
+              {[
+                ['morning', 'Morgen'],
+                ['midday', 'Middag'],
+                ['afternoon', 'Eftermiddag'],
+                ['shutdown', 'Shutdown'],
+              ].map(([t, label]) => (
+                <button
+                  key={t}
+                  className={`brief-btn ${briefType === t ? 'active' : ''}`}
+                  onClick={() => generateBrief(t)}
+                  disabled={briefLoading}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {(briefLoading || briefText) && (
+              <div className="brief-box">
+                <p className="brief-text">
+                  {briefText}
+                  {briefLoading && <span className="brief-cursor">▌</span>}
+                </p>
+                <div className="brief-footer">
+                  {briefTime && <span className="brief-timestamp">Genereret {briefTime}</span>}
+                  {briefText && !briefLoading && (
+                    <button className="speak-btn" onClick={toggleSpeak}>
+                      {speaking ? <><VolumeX size={13} /><span>Stop</span></> : <><Volume2 size={13} /><span>Oplæs</span></>}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+            {!briefText && !briefLoading && (
+              <p className="brief-empty">Vælg hvornår på dagen for en briefing.</p>
+            )}
           </div>
-        )}
-        {!briefText && !briefLoading && (
-          <p className="brief-empty">Tryk en knap for en kort briefing.</p>
-        )}
-      </section>
+        </div>
+      )}
 
 
       {/* Toast */}
@@ -1557,12 +1572,146 @@ export default function Home() {
           letter-spacing: 0.05em;
         }
 
-        /* Brief section */
-        .brief-section {
-          margin-top: 40px;
-          padding-top: 28px;
+        /* Header icon buttons */
+        .header-icon-btn {
+          color: var(--text-3);
+          background: none;
+          border: none;
+          text-decoration: none;
+          display: flex;
+          align-items: center;
+          padding: 6px;
+          border-radius: 6px;
+          cursor: pointer;
+          transition: color 0.15s;
+          touch-action: manipulation;
+        }
+        .header-icon-btn:hover { color: var(--text-1); }
+
+        /* Brief modal */
+        .brief-modal {
+          background: var(--surface);
+          border: 1px solid var(--border-2);
+          border-radius: var(--radius);
+          width: 100%;
+          max-width: 540px;
+          padding: 22px;
+          max-height: 85vh;
+          overflow-y: auto;
+        }
+
+        .brief-modal-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 18px;
+        }
+
+        .brief-modal-title {
+          font-size: 10px;
+          letter-spacing: 0.3em;
+          text-transform: uppercase;
+          color: var(--accent);
+          font-weight: 700;
+        }
+
+        .modal-close-btn {
+          background: none;
+          border: none;
+          color: var(--text-3);
+          font-size: 20px;
+          cursor: pointer;
+          padding: 0;
+          line-height: 1;
+          touch-action: manipulation;
+        }
+
+        /* Update form */
+        .update-form {
+          padding-top: 10px;
           border-top: 1px solid var(--border);
-          margin-bottom: 16px;
+        }
+
+        .update-input {
+          width: 100%;
+          background: var(--bg);
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          color: var(--text-1);
+          font-family: inherit;
+          font-size: 14px;
+          line-height: 1.55;
+          padding: 10px 12px;
+          resize: none;
+          outline: none;
+          transition: border-color 0.15s;
+        }
+        .update-input:focus { border-color: var(--border-2); }
+        .update-input::placeholder { color: var(--text-3); }
+
+        .update-form-btns {
+          display: flex;
+          gap: 8px;
+          margin-top: 8px;
+        }
+
+        .update-submit-btn {
+          background: var(--accent);
+          color: var(--bg);
+          border: none;
+          border-radius: var(--radius-sm);
+          font-family: inherit;
+          font-size: 13px;
+          font-weight: 700;
+          padding: 10px 20px;
+          cursor: pointer;
+          touch-action: manipulation;
+          transition: opacity 0.15s;
+        }
+        .update-submit-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        .update-cancel-btn {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 13px;
+          padding: 10px 16px;
+          cursor: pointer;
+          touch-action: manipulation;
+        }
+
+        /* Update result */
+        .update-result {
+          padding-top: 10px;
+          border-top: 1px solid var(--border);
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .update-change {
+          font-size: 12px;
+          color: var(--accent);
+          letter-spacing: 0.02em;
+        }
+
+        .update-result-dismiss {
+          background: none;
+          border: none;
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 11px;
+          cursor: pointer;
+          padding: 4px 0 0;
+          text-align: left;
+          touch-action: manipulation;
+        }
+
+        /* Brief section (nu kun i modal) */
+        .brief-section {
+          display: none;
         }
 
         .brief-btns {
@@ -1915,12 +2064,14 @@ function ItemCard({
   onDone,
   onArchive,
   onBacklog,
+  onUpdate,
   isBacklog = false,
 }: {
   item: Item
   onDone: (id: string) => void
   onArchive: (id: string) => void
   onBacklog?: (id: string) => void
+  onUpdate?: (id: string, updated: Item) => void
   isBacklog?: boolean
 }) {
   const isTemp = item.id.startsWith('temp-')
@@ -1928,15 +2079,22 @@ function ItemCard({
   const cardRef = useRef<HTMLDivElement>(null)
   const startXRef = useRef(0)
   const currentXRef = useRef(0)
+  const updateInputRef = useRef<HTMLTextAreaElement>(null)
   const [hintOpacity, setHintOpacity] = useState({ left: 0, right: 0 })
   const [flashClass, setFlashClass] = useState('')
+  const [updateOpen, setUpdateOpen] = useState(false)
+  const [updateText, setUpdateText] = useState('')
+  const [updateLoading, setUpdateLoading] = useState(false)
+  const [updateChanges, setUpdateChanges] = useState<string[] | null>(null)
 
   function onTouchStart(e: React.TouchEvent) {
+    if (updateOpen) return
     startXRef.current = e.touches[0].clientX
     currentXRef.current = 0
   }
 
   function onTouchMove(e: React.TouchEvent) {
+    if (updateOpen) return
     const dx = e.touches[0].clientX - startXRef.current
     currentXRef.current = dx
     const card = cardRef.current
@@ -1949,13 +2107,13 @@ function ItemCard({
   }
 
   function onTouchEnd() {
+    if (updateOpen) return
     const dx = currentXRef.current
     const card = cardRef.current
     if (!card) return
     card.style.transition = 'transform 0.2s ease'
     card.style.transform = ''
     setHintOpacity({ left: 0, right: 0 })
-
     if (dx > 80) {
       setFlashClass('flash-done')
       setTimeout(() => onDone(item.id), 300)
@@ -1963,6 +2121,36 @@ function ItemCard({
       setFlashClass('flash-archive')
       setTimeout(() => onArchive(item.id), 300)
     }
+  }
+
+  function openUpdate() {
+    setUpdateOpen(true)
+    setUpdateChanges(null)
+    setTimeout(() => updateInputRef.current?.focus(), 50)
+  }
+
+  async function submitUpdate() {
+    if (!updateText.trim() || updateLoading) return
+    setUpdateLoading(true)
+    try {
+      const res = await fetch(`/api/items/${item.id}/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          update_text: updateText,
+          current: { ai_type: item.ai_type, ai_summary: item.ai_summary, ai_priority: item.ai_priority, context_trigger: item.context_trigger },
+        }),
+      })
+      const data = await res.json()
+      if (data.item && onUpdate) onUpdate(item.id, data.item)
+      setUpdateChanges(data.changes ?? ['Opdateret'])
+      setUpdateOpen(false)
+      setUpdateText('')
+    } catch {
+      setUpdateChanges(['Kunne ikke opdatere — prøv igen'])
+      setUpdateOpen(false)
+    }
+    setUpdateLoading(false)
   }
 
   return (
@@ -1973,12 +2161,9 @@ function ItemCard({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
     >
-      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>
-        Færdig
-      </span>
-      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>
-        Arkiver
-      </span>
+      <span className="swipe-hint left-hint" style={{ opacity: hintOpacity.left }}>Færdig</span>
+      <span className="swipe-hint right-hint" style={{ opacity: hintOpacity.right }}>Arkiver</span>
+
       <div>
         <div className="item-summary">{item.ai_summary || item.raw_input}</div>
         <div className="item-meta">
@@ -1998,24 +2183,48 @@ function ItemCard({
           <div className="item-raw">{item.raw_input}</div>
         )}
       </div>
-      {!isTemp && (
+
+      {/* Update-feedback */}
+      {updateChanges && (
+        <div className="update-result">
+          {updateChanges.map((c, i) => <div key={i} className="update-change">✓ {c}</div>)}
+          <button className="update-result-dismiss" onClick={() => setUpdateChanges(null)}>OK</button>
+        </div>
+      )}
+
+      {/* Update-form */}
+      {updateOpen && (
+        <div className="update-form">
+          <textarea
+            ref={updateInputRef}
+            className="update-input"
+            placeholder="Hvad er nyt? fx 'venter på svar', 'hæv prioritet', 'ikke relevant mere'…"
+            value={updateText}
+            onChange={(e) => setUpdateText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Escape') { setUpdateOpen(false); setUpdateText('') } }}
+            rows={2}
+          />
+          <div className="update-form-btns">
+            <button className="update-submit-btn" onClick={submitUpdate} disabled={!updateText.trim() || updateLoading}>
+              {updateLoading ? '…' : 'Gem'}
+            </button>
+            <button className="update-cancel-btn" onClick={() => { setUpdateOpen(false); setUpdateText('') }}>
+              Annuller
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Handlinger */}
+      {!isTemp && !updateOpen && (
         <div className="item-actions">
-          <button className="action-btn done" onClick={() => onDone(item.id)}>
-            Færdig
-          </button>
-          {!isBacklog && onBacklog && (
-            <button className="action-btn backlog-btn" onClick={() => onBacklog(item.id)}>
-              Backlog
-            </button>
+          <button className="action-btn update-btn" onClick={openUpdate}>Opdatér</button>
+          <button className="action-btn done" onClick={() => onDone(item.id)}>Færdig</button>
+          {isBacklog ? (
+            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>→ Indbakke</button>
+          ) : (
+            <button className="action-btn not-task-btn" onClick={() => onArchive(item.id)}>Ikke en opgave</button>
           )}
-          {isBacklog && (
-            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>
-              → Indbakke
-            </button>
-          )}
-          <button className="action-btn" onClick={() => onArchive(item.id)}>
-            Arkiver
-          </button>
         </div>
       )}
     </div>

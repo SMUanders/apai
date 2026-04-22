@@ -1,4 +1,4 @@
-const CACHE = 'apai-shell-v1'
+const CACHE = 'apai-shell-v2'
 const SHELL = ['/', '/manifest.json']
 
 self.addEventListener('install', (e) => {

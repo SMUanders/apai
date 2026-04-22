@@ -134,6 +134,17 @@ export default function Settings() {
           }}>
             Import
           </h2>
+          <Link href="/import" style={{
+            display: 'block',
+            border: '1px solid #262626',
+            borderRadius: 8,
+            color: '#A2A2A2',
+            fontSize: 14,
+            padding: '14px 18px',
+            textDecoration: 'none',
+          }}>
+            Importer PDF eller liste →
+          </Link>
           <button
             onClick={importTodoist}
             disabled={loading === 'todoist'}

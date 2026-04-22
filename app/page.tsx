@@ -1388,6 +1388,17 @@ export default function Home() {
           font-weight: 600;
         }
 
+        .source-badge {
+          font-size: 9px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: #555;
+          border: 1px solid #2A2A2A;
+          border-radius: 4px;
+          padding: 2px 5px;
+          font-weight: 500;
+        }
+
         .section-label {
           font-size: 10px;
           letter-spacing: 0.3em;
@@ -2170,7 +2181,16 @@ function ItemCard({
           <span className="item-type" style={{ background: color + '20', color }}>
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
-          {item.ai_context && item.ai_context !== '__review__' && (
+          {item.ai_context?.startsWith('todoist:') && (
+            <span className="source-badge">Todoist</span>
+          )}
+          {item.ai_context === 'pdf_import' && (
+            <span className="source-badge">PDF</span>
+          )}
+          {item.ai_context === 'bulk_import' && (
+            <span className="source-badge">Liste</span>
+          )}
+          {item.ai_context && !item.ai_context.startsWith('todoist:') && item.ai_context !== '__review__' && item.ai_context !== 'pdf_import' && item.ai_context !== 'bulk_import' && (
             <span className="item-context">↳ {item.ai_context}</span>
           )}
           {item.due_at && <span className="item-due">{formatDueAt(item.due_at)}</span>}

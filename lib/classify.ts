@@ -44,6 +44,13 @@ PRIORITY — kalibrer på nyttighed, ikke kun hast:
   Opvægt: let at glemme · blokerer andet · tidsbegrænset · fjerner mental støj hurtigt
   Nedvægt: diffust projekt · ren idé · ingen konkret næste skridt · "engang"-tanke
 
+  HÅRDE LOFTER (overskriv kun hvis klar deadline eller eksplicit "vigtigt"):
+    - type=note  → max priority 3
+    - type=idea  → max priority 3
+    - type=someday → max priority 2
+    - intet konkret næste skridt → max priority 3
+  Konkrete opgaver med deadline eller klar handling kan frit være 4-5.
+
 AREA:
   smu     → Signmeup / SMU: arbejde, kunder, kode, servere, APAI-udvikling
   gca     → Grand Champion Arcade: spillemaskiner, lokaler, drift

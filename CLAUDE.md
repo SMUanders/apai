@@ -41,6 +41,11 @@ Disse principper er overordnede og skal vejlede alle designbeslutninger:
 
 task, project, note, waiting, event
 
+## Fremtidsspor (ikke bygget)
+
+- **Lange captures**: når brugeren dumper en lang tekst med flere tanker, bør AI kunne foreslå opdeling i separate items. Først modent når vi har flere datapunkter på hvordan brugeren faktisk captureer — byg ikke før det.
+- **Voice-dump**: automatisk tale → flere separate items efter sæt­ningsanalyse. Afventer Web Speech-integrationen stabiliserer sig; Whisper-routen findes allerede.
+
 ## Teknisk default
 
 Next.js · TypeScript · Supabase Postgres · Tailwind

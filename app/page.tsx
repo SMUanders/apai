@@ -466,6 +466,26 @@ export default function Home() {
     setBacklogItems((prev) => [updated, ...prev])
   }
 
+  async function reactivateFromHistory(id: string) {
+    const item = historyItems.find((i) => i.id === id)
+    if (!item) return
+    setHistoryItems((prev) => prev.filter((i) => i.id !== id))
+    const res = await fetch(`/api/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status: 'inbox',
+        ai_context: `reaktiveret ${new Date().toLocaleDateString('da-DK', { day: 'numeric', month: 'short' })}`,
+      }),
+    })
+    if (res.ok) {
+      const updated = await res.json()
+      setItems((prev) => [updated, ...prev])
+    } else {
+      setHistoryItems((prev) => [item, ...prev])
+    }
+  }
+
   function handleItemUpdate(id: string, updatedItem: Item) {
     setItems((prev) => prev.map((i) => (i.id === id ? updatedItem : i)))
   }
@@ -1279,7 +1299,7 @@ export default function Home() {
           {historyOpen && (
             <div className="item-list" style={{ marginTop: 8 }}>
               {historyItems.map((item) => (
-                <div key={item.id} className="item-card" style={{ opacity: 0.6 }}>
+                <div key={item.id} className="item-card history-card">
                   <div>
                     <div className="item-summary">{item.ai_summary || item.raw_input}</div>
                     <div className="item-meta">
@@ -1296,6 +1316,15 @@ export default function Home() {
                         {item.status === 'done' ? '✓ Færdig' : 'Arkiveret'}
                       </span>
                     </div>
+                  </div>
+                  <div className="item-actions">
+                    <button
+                      className="action-btn reactivate-btn"
+                      onClick={() => reactivateFromHistory(item.id)}
+                      title="Flyt tilbage til indbakken som aktivt item"
+                    >
+                      ↺ Genaktivér
+                    </button>
                   </div>
                 </div>
               ))}
@@ -2154,6 +2183,10 @@ export default function Home() {
 
         .action-btn:hover { border-color: var(--border-2); color: var(--text-1); }
         .action-btn.done:hover { border-color: var(--accent); color: var(--accent); }
+        .action-btn.reactivate-btn:hover { border-color: #6AE08A; color: #6AE08A; }
+
+        .history-card { opacity: 0.6; }
+        .history-card:hover { opacity: 1; }
 
         .empty-state {
           text-align: center;
@@ -3430,25 +3463,27 @@ function ItemCard({
                 className="action-btn prio-btn"
                 onClick={() => onPriorityChange(item.id, item.ai_priority + 1)}
                 disabled={item.ai_priority >= 5}
-                title="Vigtigere"
-              >↑</button>
+                title="Hæv prioritet"
+                aria-label="Hæv prioritet"
+              >↑ Prio</button>
               <button
                 className="action-btn prio-btn"
                 onClick={() => onPriorityChange(item.id, item.ai_priority - 1)}
                 disabled={item.ai_priority <= 1}
-                title="Mindre vigtig"
-              >↓</button>
+                title="Sænk prioritet"
+                aria-label="Sænk prioritet"
+              >↓ Prio</button>
             </>
           )}
           {onSnooze && (
-            <button className="action-btn" onClick={() => setSnoozeOpen(true)}>Snooze</button>
+            <button className="action-btn" onClick={() => setSnoozeOpen(true)} title="Skub ud af fokus — kommer tilbage senere">Snooze</button>
           )}
-          <button className="action-btn update-btn" onClick={openUpdate}>Opdatér</button>
-          <button className="action-btn done" onClick={() => onDone(item.id)}>Færdig</button>
+          <button className="action-btn update-btn" onClick={openUpdate} title="Fri tekst — AI opdaterer felter">Opdatér</button>
+          <button className="action-btn done" onClick={() => onDone(item.id)} title="Marker som færdig">✓ Færdig</button>
           {isBacklog ? (
-            <button className="action-btn" onClick={() => onBacklog?.(item.id)}>→ Indbakke</button>
+            <button className="action-btn" onClick={() => onBacklog?.(item.id)} title="Flyt tilbage til indbakken">→ Indbakke</button>
           ) : (
-            <button className="action-btn not-task-btn" onClick={() => onArchive(item.id)}>Ikke en opgave</button>
+            <button className="action-btn not-task-btn" onClick={() => onArchive(item.id)} title="Arkivér — ikke en opgave, væk fra indbakken">Arkivér</button>
           )}
         </div>
       )}

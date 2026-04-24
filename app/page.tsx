@@ -2098,16 +2098,17 @@ export default function Home() {
         .swipe-hint.right-hint { right: 16px; color: var(--danger); }
 
         .item-summary {
-          font-size: 15px;
-          line-height: 1.55;
+          font-size: 16px;
+          line-height: 1.5;
           color: var(--text-1);
+          font-weight: 500;
         }
 
         .item-meta {
           display: flex;
-          gap: 8px;
+          gap: 6px;
           align-items: center;
-          margin-top: 8px;
+          margin-top: 10px;
           flex-wrap: wrap;
         }
 
@@ -2118,11 +2119,6 @@ export default function Home() {
           padding: 3px 7px;
           border-radius: 4px;
           font-weight: 600;
-        }
-
-        .item-context {
-          font-size: 12px;
-          color: var(--text-2);
         }
 
         .item-due {
@@ -2149,20 +2145,64 @@ export default function Home() {
           letter-spacing: 0.04em;
         }
 
+        .item-priority-tag {
+          font-size: 10px;
+          letter-spacing: 0.1em;
+          text-transform: uppercase;
+          color: var(--accent);
+          border: 1px solid rgba(232,255,60,0.35);
+          background: rgba(232,255,60,0.06);
+          border-radius: 4px;
+          padding: 2px 6px;
+          font-weight: 600;
+        }
+
+        .item-snoozed {
+          font-size: 11px;
+          color: var(--text-3);
+          letter-spacing: 0.02em;
+        }
+
+        .item-helper {
+          margin-top: 8px;
+          display: flex;
+          flex-direction: column;
+          gap: 3px;
+        }
+
+        .item-helper-line {
+          font-size: 12px;
+          color: var(--text-3);
+          line-height: 1.4;
+        }
+
+        .item-source-hint {
+          font-size: 10px;
+          color: var(--text-3);
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          opacity: 0.7;
+        }
+
         .item-raw {
           font-size: 12px;
           color: var(--text-3);
-          margin-top: 6px;
           line-height: 1.45;
           font-style: italic;
+        }
+
+        .item-actions-wrap {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+          padding-top: 10px;
+          border-top: 1px solid var(--border);
         }
 
         .item-actions {
           display: flex;
           flex-direction: row;
           gap: 6px;
-          padding-top: 4px;
-          border-top: 1px solid var(--border);
         }
 
         .action-btn {
@@ -2171,19 +2211,66 @@ export default function Home() {
           border-radius: var(--radius-sm);
           color: var(--text-2);
           font-family: inherit;
-          font-size: 12px;
-          padding: 8px 10px;
+          font-size: 13px;
+          padding: 10px 10px;
           cursor: pointer;
           transition: all 0.1s;
           white-space: nowrap;
           flex: 1;
           text-align: center;
           touch-action: manipulation;
+          font-weight: 500;
         }
 
         .action-btn:hover { border-color: var(--border-2); color: var(--text-1); }
-        .action-btn.done:hover { border-color: var(--accent); color: var(--accent); }
+        .action-btn.done {
+          background: var(--accent);
+          border-color: var(--accent);
+          color: var(--bg);
+          font-weight: 700;
+        }
+        .action-btn.done:hover { opacity: 0.9; }
         .action-btn.reactivate-btn:hover { border-color: #6AE08A; color: #6AE08A; }
+
+        .item-more-toggle {
+          align-self: flex-end;
+          background: none;
+          border: none;
+          color: var(--text-3);
+          font-family: inherit;
+          font-size: 11px;
+          letter-spacing: 0.08em;
+          padding: 2px 4px;
+          cursor: pointer;
+          touch-action: manipulation;
+        }
+
+        .item-more-toggle:hover { color: var(--text-1); }
+
+        .item-actions-secondary {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          padding-top: 4px;
+        }
+
+        .action-btn-sm {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          color: var(--text-2);
+          font-family: inherit;
+          font-size: 12px;
+          padding: 7px 12px;
+          cursor: pointer;
+          transition: all 0.1s;
+          touch-action: manipulation;
+        }
+
+        .action-btn-sm:hover { border-color: var(--border-2); color: var(--text-1); }
+        .action-btn-sm:disabled { opacity: 0.3; cursor: not-allowed; }
+        .action-btn-sm.danger { color: #FF6B3C; border-color: rgba(255,107,60,0.25); }
+        .action-btn-sm.danger:hover { background: rgba(255,107,60,0.06); border-color: rgba(255,107,60,0.5); }
 
         .history-card { opacity: 0.6; }
         .history-card:hover { opacity: 1; }
@@ -2535,14 +2622,6 @@ export default function Home() {
         .brief-action-btn:disabled { opacity: 0.25; cursor: not-allowed; }
         .brief-action-btn.danger { color: #FF6B3C; border-color: rgba(255,107,60,0.3); }
         .brief-action-btn.danger:hover { background: rgba(255,107,60,0.08); }
-
-        .action-btn.prio-btn {
-          font-size: 13px;
-          min-width: 32px;
-          padding: 6px 8px;
-          color: var(--text-2);
-        }
-        .action-btn.prio-btn:disabled { opacity: 0.2; cursor: not-allowed; }
 
         .snooze-picker {
           display: flex;
@@ -3115,11 +3194,14 @@ export default function Home() {
           .item-card { padding: 14px; }
 
           .action-btn {
-            font-size: 12px;
-            padding: 10px 8px;
+            font-size: 13px;
+            padding: 11px 6px;
           }
 
-          .action-btn.backlog-btn { display: none; }
+          .action-btn-sm {
+            flex: 1;
+            min-width: 0;
+          }
 
           .toast {
             bottom: 24px;
@@ -3176,6 +3258,7 @@ function ItemCard({
   const [areaPickerOpen, setAreaPickerOpen] = useState(false)
   const [typePickerOpen, setTypePickerOpen] = useState(false)
   const [snoozeOpen, setSnoozeOpen] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
 
   function onTouchStart(e: React.TouchEvent) {
     if (updateOpen) return
@@ -3265,40 +3348,6 @@ function ItemCard({
           >
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
-          {item.group_label && (
-            <span
-              className="group-label-badge"
-              onClick={(e) => { e.stopPropagation(); setGroupPickerOpen((o) => !o) }}
-              title="Skift sag"
-            >
-              {item.group_label}
-            </span>
-          )}
-          {!item.group_label && onGroupUpdate && (
-            <button
-              className="group-attach-btn"
-              onClick={(e) => { e.stopPropagation(); setGroupPickerOpen((o) => !o) }}
-            >
-              ~ sag
-            </button>
-          )}
-          {item.ai_context?.startsWith('todoist:') && (
-            <span className="source-badge">Todoist</span>
-          )}
-          {item.ai_context === 'pdf_import' && (
-            <span className="source-badge">PDF</span>
-          )}
-          {item.ai_context === 'bulk_import' && (
-            <span className="source-badge">Liste</span>
-          )}
-          {item.ai_context && !item.ai_context.startsWith('todoist:') && item.ai_context !== '__review__' && item.ai_context !== 'pdf_import' && item.ai_context !== 'bulk_import' && (
-            <span className="item-context">↳ {item.ai_context}</span>
-          )}
-          {item.due_at && <span className={isDuePast(item.due_at) ? 'item-due-overdue' : 'item-due'}>{formatDueAt(item.due_at)}</span>}
-          <span className="item-priority">{PRIORITY_DOT(item.ai_priority)}</span>
-          {(item.ai_type === 'none' || item.ai_context === '__review__') && (
-            <span className="review-badge">til review</span>
-          )}
           {item.area && item.area !== 'andet' && (
             <span
               className="area-badge"
@@ -3309,19 +3358,47 @@ function ItemCard({
               {AREA_LABELS[item.area] ?? item.area}
             </span>
           )}
-          {(!item.area || item.area === 'andet') && onAreaUpdate && (
-            <button
-              className="group-attach-btn"
-              style={{ color: '#2A2A2A', borderColor: '#1E1E1E' }}
-              onClick={(e) => { e.stopPropagation(); setAreaPickerOpen((o) => !o) }}
+          {item.group_label && (
+            <span
+              className="group-label-badge"
+              onClick={(e) => { e.stopPropagation(); setGroupPickerOpen((o) => !o) }}
+              title="Skift sag"
             >
-              + område
-            </button>
+              {item.group_label}
+            </span>
+          )}
+          {item.due_at && (
+            <span className={isDuePast(item.due_at) ? 'item-due-overdue' : 'item-due'}>
+              {formatDueAt(item.due_at)}
+            </span>
+          )}
+          {item.snoozed_until && new Date(item.snoozed_until) > new Date() && (
+            <span className="item-snoozed">Vises igen {formatDueAt(item.snoozed_until)}</span>
+          )}
+          {item.ai_priority >= 4 && (
+            <span className="item-priority-tag">Vigtig</span>
+          )}
+          {(item.ai_type === 'none' || item.ai_context === '__review__') && (
+            <span className="review-badge">til review</span>
           )}
         </div>
-        {item.ai_summary && item.ai_summary !== item.raw_input && (
-          <div className="item-raw">{item.raw_input}</div>
-        )}
+        {(item.ai_summary && item.ai_summary !== item.raw_input) ||
+        (item.ai_context && !item.ai_context.startsWith('todoist:') && item.ai_context !== '__review__' && item.ai_context !== 'pdf_import' && item.ai_context !== 'bulk_import') ||
+        item.ai_context?.startsWith('todoist:') || item.ai_context === 'pdf_import' || item.ai_context === 'bulk_import' ? (
+          <div className="item-helper">
+            {item.ai_summary && item.ai_summary !== item.raw_input && (
+              <div className="item-raw">{item.raw_input}</div>
+            )}
+            {item.ai_context && !item.ai_context.startsWith('todoist:') && item.ai_context !== '__review__' && item.ai_context !== 'pdf_import' && item.ai_context !== 'bulk_import' && (
+              <div className="item-helper-line">↳ {item.ai_context}</div>
+            )}
+            {(item.ai_context?.startsWith('todoist:') || item.ai_context === 'pdf_import' || item.ai_context === 'bulk_import') && (
+              <div className="item-source-hint">
+                {item.ai_context?.startsWith('todoist:') ? 'Fra Todoist' : item.ai_context === 'pdf_import' ? 'Fra PDF' : 'Fra liste'}
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {/* Update-feedback */}
@@ -3456,34 +3533,56 @@ function ItemCard({
 
       {/* Handlinger */}
       {!isTemp && !updateOpen && !groupPickerOpen && !snoozeOpen && !typePickerOpen && !areaPickerOpen && (
-        <div className="item-actions">
-          {onPriorityChange && (
-            <>
-              <button
-                className="action-btn prio-btn"
-                onClick={() => onPriorityChange(item.id, item.ai_priority + 1)}
-                disabled={item.ai_priority >= 5}
-                title="Hæv prioritet"
-                aria-label="Hæv prioritet"
-              >↑ Prio</button>
-              <button
-                className="action-btn prio-btn"
-                onClick={() => onPriorityChange(item.id, item.ai_priority - 1)}
-                disabled={item.ai_priority <= 1}
-                title="Sænk prioritet"
-                aria-label="Sænk prioritet"
-              >↓ Prio</button>
-            </>
-          )}
-          {onSnooze && (
-            <button className="action-btn" onClick={() => setSnoozeOpen(true)} title="Skub ud af fokus — kommer tilbage senere">Snooze</button>
-          )}
-          <button className="action-btn update-btn" onClick={openUpdate} title="Fri tekst — AI opdaterer felter">Opdatér</button>
-          <button className="action-btn done" onClick={() => onDone(item.id)} title="Marker som færdig">✓ Færdig</button>
-          {isBacklog ? (
-            <button className="action-btn" onClick={() => onBacklog?.(item.id)} title="Flyt tilbage til indbakken">→ Indbakke</button>
-          ) : (
-            <button className="action-btn not-task-btn" onClick={() => onArchive(item.id)} title="Arkivér — ikke en opgave, væk fra indbakken">Arkivér</button>
+        <div className="item-actions-wrap">
+          <div className="item-actions">
+            <button className="action-btn done" onClick={() => onDone(item.id)} title="Marker som færdig">Færdig</button>
+            <button className="action-btn update-btn" onClick={openUpdate} title="Fri tekst — AI opdaterer felter">Opdatér</button>
+            {onSnooze && (
+              <button className="action-btn" onClick={() => setSnoozeOpen(true)} title="Skub ud af fokus — kommer tilbage senere">Senere</button>
+            )}
+          </div>
+          <button
+            className="item-more-toggle"
+            onClick={() => setMoreOpen((o) => !o)}
+            aria-expanded={moreOpen}
+          >
+            {moreOpen ? 'Færre valg' : 'Flere valg'}
+          </button>
+          {moreOpen && (
+            <div className="item-actions-secondary">
+              {onPriorityChange && (
+                <>
+                  <button
+                    className="action-btn-sm"
+                    onClick={() => onPriorityChange(item.id, item.ai_priority + 1)}
+                    disabled={item.ai_priority >= 5}
+                  >Mere vigtigt</button>
+                  <button
+                    className="action-btn-sm"
+                    onClick={() => onPriorityChange(item.id, item.ai_priority - 1)}
+                    disabled={item.ai_priority <= 1}
+                  >Mindre vigtigt</button>
+                </>
+              )}
+              {onTypeUpdate && (
+                <button className="action-btn-sm" onClick={() => { setTypePickerOpen(true); setMoreOpen(false) }}>Skift type</button>
+              )}
+              {onAreaUpdate && (
+                <button className="action-btn-sm" onClick={() => { setAreaPickerOpen(true); setMoreOpen(false) }}>
+                  {item.area && item.area !== 'andet' ? 'Skift område' : 'Vælg område'}
+                </button>
+              )}
+              {onGroupUpdate && (
+                <button className="action-btn-sm" onClick={() => { setGroupPickerOpen(true); setMoreOpen(false) }}>
+                  {item.group_label ? 'Skift sag' : 'Tilknyt sag'}
+                </button>
+              )}
+              {isBacklog ? (
+                <button className="action-btn-sm" onClick={() => onBacklog?.(item.id)}>Flyt til indbakke</button>
+              ) : (
+                <button className="action-btn-sm danger" onClick={() => onArchive(item.id)}>Ikke en opgave</button>
+              )}
+            </div>
           )}
         </div>
       )}

@@ -34,22 +34,27 @@ TYPE — vælg det skarpeste match:
   someday   = måske en dag — ikke akut, ikke besluttet
   none      = registrering, kvittering, ingen handling nødvendig
 
-PRIORITY — kalibrer på nyttighed, ikke kun hast:
-  5 = skal handles i dag — let at glemme, blokerer noget, stærkt tidsnært eller kontekstbundet
-  4 = bør handles snart — høj praktisk nytte, reducerer mental støj, relevant i nær fremtid
-  3 = normal vigtig ting — relevant men ikke presserende
-  2 = kan vente — lavere aktuel relevans
-  1 = reference, someday/maybe, ingen reel handling nu
+PRIORITY — VIGTIGT: 3 er standard. 4 og 5 skal være undtagelser.
+  5 = skal ske i dag eller i morgen · deadline inden for 24-48 timer · blokerer noget konkret og vigtigt · eksplicit "haster" / "akut" i input
+  4 = konkret deadline inden for 7 dage · kalender- eller aftalebundet · tidsnær kontekst nævnt ("på fredag", "inden weekenden")
+  3 = STANDARD — almindelig ting der skal gøres når der er tid · ingen deadline · ingen særlig hast
+  2 = kan roligt vente · lavere aktuel relevans · ingen konsekvens ved udsættelse
+  1 = ren reference · someday/maybe · ingen reel handling nu
 
-  Opvægt: let at glemme · blokerer andet · tidsbegrænset · fjerner mental støj hurtigt
-  Nedvægt: diffust projekt · ren idé · ingen konkret næste skridt · "engang"-tanke
-
-  HÅRDE LOFTER (overskriv kun hvis klar deadline eller eksplicit "vigtigt"):
-    - type=note  → max priority 3
-    - type=idea  → max priority 3
-    - type=someday → max priority 2
+  HÅRDE LOFTER — overhold strengt:
+    - type=task UDEN due_at eller eksplicit tidsmarkør i input → max priority 3
+    - type=note     → max priority 2
+    - type=idea     → max priority 3
+    - type=someday  → max priority 1
+    - type=reminder → priority afhænger af tidsnærhed (i dag/i morgen = 5, i denne uge = 4, senere = 3)
+    - type=none     → priority 1
     - intet konkret næste skridt → max priority 3
-  Konkrete opgaver med deadline eller klar handling kan frit være 4-5.
+
+  ALMINDELIGE HVERDAGSOPGAVER — disse er normalt priority 3, ikke højere:
+  ringe/svare/skrive tilbage · købe/bestille · tjekke/kigge på · huske at medbringe · rydde op · rengøre · booke tid · læse/se færdig · undersøge
+  De bliver først 4-5 hvis input selv indeholder konkret deadline eller markant hastesignal.
+
+  Tvivl mellem 3 og 4 → vælg 3. Tvivl mellem 4 og 5 → vælg 4.
 
 AREA:
   smu     → Signmeup / SMU: arbejde, kunder, kode, servere, APAI-udvikling

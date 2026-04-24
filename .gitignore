@@ -6,3 +6,7 @@ node_modules/
 
 # Local Netlify folder
 .netlify
+
+# Supabase CLI local state
+supabase/.temp/
+supabase/.branches/

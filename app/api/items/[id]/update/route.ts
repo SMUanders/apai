@@ -54,8 +54,12 @@ export async function POST(
   const updates: Record<string, unknown> = {}
   if (parsed.ai_type != null)          updates.ai_type       = parsed.ai_type
   if (parsed.ai_summary != null)       updates.ai_summary    = parsed.ai_summary
-  if (parsed.ai_priority != null)      updates.ai_priority   = parsed.ai_priority
   if (parsed.context_trigger != null)  updates.context_trigger = parsed.context_trigger
+  if (parsed.ai_priority != null) {
+    updates.ai_priority = parsed.ai_priority
+    // Fri-tekst prioritetsændring er et brugerintent — behandl som manuel override
+    updates.user_priority_override = true
+  }
 
   const { data, error } = await supabase
     .from('items')

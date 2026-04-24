@@ -6,7 +6,7 @@ import { classifyInput } from '@/lib/classify'
 export async function POST() {
   const { data: items, error } = await supabase
     .from('items')
-    .select('id, raw_input')
+    .select('id, raw_input, user_priority_override')
     .eq('status', 'inbox')
     .is('context_trigger', null)
 
@@ -17,16 +17,20 @@ export async function POST() {
   for (const item of items) {
     try {
       const classification = await classifyInput(item.raw_input)
+      const updates: Record<string, unknown> = {
+        ai_type: classification.type,
+        ai_summary: classification.summary,
+        ai_context: classification.context,
+        context_trigger: classification.context_trigger,
+        due_at: classification.due_at,
+      }
+      // Respektér manuel vigtig-markering: rør ikke prioritet hvis override er sat
+      if (!item.user_priority_override) {
+        updates.ai_priority = classification.priority
+      }
       await supabase
         .from('items')
-        .update({
-          ai_type: classification.type,
-          ai_summary: classification.summary,
-          ai_context: classification.context,
-          ai_priority: classification.priority,
-          context_trigger: classification.context_trigger,
-          due_at: classification.due_at,
-        })
+        .update(updates)
         .eq('id', item.id)
       updated++
     } catch { /* fortsæt med næste */ }

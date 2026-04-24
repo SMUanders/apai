@@ -276,14 +276,36 @@ export default function Home() {
     const res = await fetch(`/api/items/${id}/priority`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ priority: clamped }),
+      body: JSON.stringify({ priority: clamped, manual: true }),
     })
     if (res.ok) {
       const data = await res.json()
-      const update = (prev: Item[]) => prev.map((i) => i.id === id ? { ...i, ai_priority: data.item.ai_priority } : i)
+      const update = (prev: Item[]) => prev.map((i) => i.id === id ? {
+        ...i,
+        ai_priority: data.item.ai_priority,
+        user_priority_override: data.item.user_priority_override,
+      } : i)
       setItems(update)
       setBacklogItems(update)
       setBriefPoints((prev) => prev.map((p) => p.item?.id === id ? { ...p, item: { ...p.item!, ai_priority: data.item.ai_priority } } : p))
+    }
+  }
+
+  async function handleImportantToggle(id: string, important: boolean) {
+    const res = await fetch(`/api/items/${id}/priority`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ important }),
+    })
+    if (res.ok) {
+      const data = await res.json()
+      const update = (prev: Item[]) => prev.map((i) => i.id === id ? {
+        ...i,
+        ai_priority: data.item.ai_priority,
+        user_priority_override: data.item.user_priority_override,
+      } : i)
+      setItems(update)
+      setBacklogItems(update)
     }
   }
 
@@ -776,7 +798,7 @@ export default function Home() {
     else if (activeFilter === 'idea') result = result.filter((i) => i.ai_type === 'idea')
     else if (activeFilter === 'someday') result = result.filter((i) => i.ai_type === 'someday')
     else if (activeFilter === 'med-dato') result = result.filter((i) => i.due_at && i.ai_type !== 'someday')
-    else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4 && i.ai_type !== 'someday')
+    else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4 && i.ai_type !== 'someday' && i.ai_type !== 'note')
     else if (activeFilter === 'review') result = result.filter((i) => i.ai_type === 'none' || i.ai_context === '__review__')
     else if (activeFilter === 'sager') result = result.filter((i) => !!i.group_label)
     else result = result.filter((i) => i.ai_type !== 'someday') // 'alle' — skjul someday fra hovedvisning
@@ -826,7 +848,9 @@ export default function Home() {
   const isFiltered =
     activeFilter !== 'alle' || activeAreaFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
 
-  const top3 = filteredItems.filter((i) => i.ai_priority >= 4 && i.ai_type !== 'someday').slice(0, 3)
+  const top3 = filteredItems
+    .filter((i) => i.ai_priority === 5 && i.ai_type !== 'someday' && i.ai_type !== 'note')
+    .slice(0, 3)
   const rest = filteredItems.filter((i) => !top3.find((t) => t.id === i.id))
 
   return (
@@ -1129,6 +1153,7 @@ export default function Home() {
                 onAreaUpdate={handleAreaUpdate}
                 onTypeUpdate={handleTypeUpdate}
                 onPriorityChange={handlePriorityChange}
+                onImportantToggle={handleImportantToggle}
                 onSnooze={handleSnooze}
               />
             ))}
@@ -1175,6 +1200,7 @@ export default function Home() {
                       onAreaUpdate={handleAreaUpdate}
                       onTypeUpdate={handleTypeUpdate}
                       onPriorityChange={handlePriorityChange}
+                      onImportantToggle={handleImportantToggle}
                       onSnooze={handleSnooze}
                     />
                   ))}
@@ -1196,6 +1222,7 @@ export default function Home() {
                   onAreaUpdate={handleAreaUpdate}
                   onTypeUpdate={handleTypeUpdate}
                   onPriorityChange={handlePriorityChange}
+                  onImportantToggle={handleImportantToggle}
                   onSnooze={handleSnooze}
                 />
               ))}
@@ -1242,6 +1269,7 @@ export default function Home() {
                           onAreaUpdate={handleAreaUpdate}
                           onTypeUpdate={handleTypeUpdate}
                           onPriorityChange={handlePriorityChange}
+                          onImportantToggle={handleImportantToggle}
                           onSnooze={handleSnooze}
                         />
                       ))}
@@ -1278,6 +1306,7 @@ export default function Home() {
                   onAreaUpdate={handleAreaUpdate}
                   onTypeUpdate={handleTypeUpdate}
                   onPriorityChange={handlePriorityChange}
+                  onImportantToggle={handleImportantToggle}
                   onSnooze={handleSnooze}
                   isBacklog
                 />
@@ -2157,6 +2186,11 @@ export default function Home() {
           font-weight: 600;
         }
 
+        .item-priority-tag.manual {
+          border-color: rgba(232,255,60,0.7);
+          background: rgba(232,255,60,0.14);
+        }
+
         .item-snoozed {
           font-size: 11px;
           color: var(--text-3);
@@ -2232,8 +2266,46 @@ export default function Home() {
         .action-btn.done:hover { opacity: 0.9; }
         .action-btn.reactivate-btn:hover { border-color: #6AE08A; color: #6AE08A; }
 
+        .item-actions-row-2 {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .important-toggle {
+          background: none;
+          border: 1px solid var(--border);
+          border-radius: var(--radius-sm);
+          color: var(--text-2);
+          font-family: inherit;
+          font-size: 12px;
+          padding: 6px 12px;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          gap: 6px;
+          transition: all 0.1s;
+          touch-action: manipulation;
+        }
+
+        .important-toggle:hover { border-color: var(--border-2); color: var(--text-1); }
+
+        .important-toggle.active {
+          border-color: var(--accent);
+          color: var(--accent);
+          background: var(--accent-bg);
+          font-weight: 600;
+        }
+
+        .important-star {
+          font-size: 14px;
+          line-height: 1;
+        }
+
+        .important-toggle.active .important-star { color: var(--accent); }
+
         .item-more-toggle {
-          align-self: flex-end;
           background: none;
           border: none;
           color: var(--text-3);
@@ -3224,6 +3296,7 @@ function ItemCard({
   onAreaUpdate,
   onTypeUpdate,
   onPriorityChange,
+  onImportantToggle,
   onSnooze,
   existingGroups = [],
   isBacklog = false,
@@ -3237,6 +3310,7 @@ function ItemCard({
   onAreaUpdate?: (id: string, area: string) => void
   onTypeUpdate?: (id: string, ai_type: 'task' | 'note' | 'idea' | 'someday') => void
   onPriorityChange?: (id: string, newPriority: number) => void
+  onImportantToggle?: (id: string, important: boolean) => void
   onSnooze?: (id: string, option: string) => void
   existingGroups?: string[]
   isBacklog?: boolean
@@ -3329,7 +3403,7 @@ function ItemCard({
   return (
     <div
       ref={cardRef}
-      className={`item-card ${item.ai_priority >= 4 ? 'priority-high' : ''} ${flashClass}`}
+      className={`item-card ${item.ai_priority === 5 ? 'priority-high' : ''} ${flashClass}`}
       onTouchStart={onTouchStart}
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
@@ -3375,8 +3449,10 @@ function ItemCard({
           {item.snoozed_until && new Date(item.snoozed_until) > new Date() && (
             <span className="item-snoozed">Vises igen {formatDueAt(item.snoozed_until)}</span>
           )}
-          {item.ai_priority >= 4 && (
-            <span className="item-priority-tag">Vigtig</span>
+          {item.ai_priority === 5 && (
+            <span className={`item-priority-tag ${item.user_priority_override ? 'manual' : ''}`}>
+              {item.user_priority_override ? '★ Vigtig' : 'Vigtig'}
+            </span>
           )}
           {(item.ai_type === 'none' || item.ai_context === '__review__') && (
             <span className="review-badge">til review</span>
@@ -3541,29 +3617,28 @@ function ItemCard({
               <button className="action-btn" onClick={() => setSnoozeOpen(true)} title="Skub ud af fokus — kommer tilbage senere">Senere</button>
             )}
           </div>
-          <button
-            className="item-more-toggle"
-            onClick={() => setMoreOpen((o) => !o)}
-            aria-expanded={moreOpen}
-          >
-            {moreOpen ? 'Færre valg' : 'Flere valg'}
-          </button>
+          <div className="item-actions-row-2">
+            {onImportantToggle && (
+              <button
+                className={`important-toggle ${item.user_priority_override ? 'active' : ''}`}
+                onClick={() => onImportantToggle(item.id, !item.user_priority_override)}
+                title={item.user_priority_override ? 'Fjern vigtig-markering' : 'Marker som vigtig — vises øverst'}
+                aria-pressed={!!item.user_priority_override}
+              >
+                <span className="important-star">{item.user_priority_override ? '★' : '☆'}</span>
+                <span>{item.user_priority_override ? 'Vigtig' : 'Markér vigtig'}</span>
+              </button>
+            )}
+            <button
+              className="item-more-toggle"
+              onClick={() => setMoreOpen((o) => !o)}
+              aria-expanded={moreOpen}
+            >
+              {moreOpen ? 'Færre valg' : 'Flere valg'}
+            </button>
+          </div>
           {moreOpen && (
             <div className="item-actions-secondary">
-              {onPriorityChange && (
-                <>
-                  <button
-                    className="action-btn-sm"
-                    onClick={() => onPriorityChange(item.id, item.ai_priority + 1)}
-                    disabled={item.ai_priority >= 5}
-                  >Mere vigtigt</button>
-                  <button
-                    className="action-btn-sm"
-                    onClick={() => onPriorityChange(item.id, item.ai_priority - 1)}
-                    disabled={item.ai_priority <= 1}
-                  >Mindre vigtigt</button>
-                </>
-              )}
               {onTypeUpdate && (
                 <button className="action-btn-sm" onClick={() => { setTypePickerOpen(true); setMoreOpen(false) }}>Skift type</button>
               )}

@@ -2,35 +2,39 @@ import { NextResponse } from 'next/server'
 import { complete } from '@/lib/ai'
 import { supabaseAdmin as supabase } from '@/lib/supabase-server'
 
-const SYSTEM_PROMPT = `Du er prioriteringsassistent for APAI. Du får inbox-items med id, s (kort tekst), ai_type og ai_priority.
+const SYSTEM_PROMPT = `Du er prioriteringsassistent for APAI. Du får inbox-items med id, s (kort tekst), ai_type, ai_priority og evt. due.
 
 Returner KUN items der skal ændres — tom array [] hvis ingen ændringer:
 [{"id":"uuid","ai_priority":1-5,"ai_type":"task|note|idea|reminder|someday|none"}]
 
-PRIORITETSSKALA:
-  5 = skal handles i dag — let at glemme, blokerer noget, stærkt kontekstbundet eller tidsnært
-  4 = bør handles snart — høj praktisk nytte, reducerer mental støj, relevant i nær fremtid
-  3 = normal vigtig ting — relevant men ikke presserende
-  2 = kan vente — lavere aktuel relevans, ingen konsekvens hvis det venter
-  1 = reference, someday/maybe, ingen reel handling nu
+PRIORITETSSKALA — 3 er standard. 4 og 5 er undtagelser:
+  5 = skal ske i dag/i morgen · deadline inden for 24-48 timer · blokerer noget vigtigt · eksplicit hast
+  4 = konkret deadline inden for 7 dage · kalender- eller aftalebundet
+  3 = STANDARD — almindelig ting der skal gøres når der er tid · ingen deadline · ingen særlig hast
+  2 = kan roligt vente
+  1 = ren reference / someday — ingen reel handling
 
-OPVÆGT: let at glemme · blokerer andet · tidsnært · fjerner mental støj hurtigt · specifik konteksttrigger
-NEDVÆGT: diffust projekt · ren idé · ingen konkret næste skridt · "engang"-tanke
+HÅRDE LOFTER:
+  - type=task UDEN due → max 3
+  - type=note → max 2
+  - type=idea → max 3
+  - type=someday → max 1
+  - type=none → 1
+  - Almindelige hverdagsopgaver (ringe, købe, svare, tjekke, booke) uden tidsmarkør = 3, ikke højere
 
 REGLER:
 - Alder alene er IKKE grund til at ændre prioritet
-- Idéer og someday: aldrig over prioritet 3
-- Notes og referencer: aldrig over prioritet 2
 - Ret ai_type kun hvis åbenlyst forkert
-- Tvivl → udelad item fra output (behold eksisterende)
+- Tvivl mellem 3 og 4 → vælg 3. Tvivl i øvrigt → udelad item (behold eksisterende)
 
 Output: kun JSON-array, ingen tekst, ingen markdown.`
 
 export async function POST() {
   const { data: items, error } = await supabase
     .from('items')
-    .select('id, raw_input, ai_type, ai_priority')
+    .select('id, raw_input, ai_type, ai_priority, due_at, user_priority_override')
     .eq('status', 'inbox')
+    .or('user_priority_override.is.null,user_priority_override.eq.false')
     .limit(60)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -42,6 +46,7 @@ export async function POST() {
     s: (i.raw_input ?? '').slice(0, 80),
     ai_type: i.ai_type,
     ai_priority: i.ai_priority,
+    due: i.due_at ? i.due_at.slice(0, 10) : null,
   }))
 
   console.log(`[reprioritize] ${items.length} items sendt til AI`)

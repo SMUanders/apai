@@ -42,8 +42,8 @@ const ACTIONS = [
   {
     key: 'reprioritize',
     label: 'Re-prioritér indbakken',
-    description: 'AI gennemgår alle inbox-items og justerer prioritet (1–5) og type. Skala: 5 = skal ske i dag / let at glemme, 4 = snart / fjerner mental støj, 3 = normal, 2 = kan vente, 1 = reference/someday. Alder alene sænker ikke prioritet.',
-    confirmText: 'AI justerer prioritet på alle items i indbakken. Fortsæt?',
+    description: 'AI gennemgår alle inbox-items og justerer prioritet (1–5) og type efter den nye skærpede skala: 3 er standard, 4 og 5 er undtagelser (deadline inden for 7 dage / i dag-i morgen). Items du selv har markeret som Vigtig rører AI ikke.',
+    confirmText: 'AI justerer prioritet på alle items i indbakken. Manuelle vigtig-markeringer bevares. Fortsæt?',
     url: '/api/items/reprioritize',
     formatResult: (d: Record<string, unknown>) =>
       d.updated === 0 ? 'Ingen ændringer — prioriteter ser korrekte ud.' : `${d.updated} items fik justeret prioritet eller type.`,

@@ -22,6 +22,7 @@ export interface Item {
   snoozed_until?: string | null
   group_label?: string | null
   area?: AreaType | null
+  user_priority_override?: boolean
   status: ItemStatus
   created_at: string
   updated_at: string

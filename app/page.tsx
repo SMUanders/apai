@@ -947,17 +947,29 @@ export default function Home() {
       })()}
 
       {/* Filter + Sort + Search */}
-      <div className="filter-row">
-        <div className="filter-labels">
-          {FILTERS.map((f) => (
-            <button
-              key={f.id}
-              className={`filter-label ${activeFilter === f.id ? 'active' : ''}`}
-              onClick={() => setActiveFilter(f.id)}
-            >
-              {f.label}
-            </button>
-          ))}
+      <div className="filter-bar">
+        <div className="filter-row">
+          <div className="filter-labels">
+            {FILTERS.map((f) => (
+              <button
+                key={f.id}
+                className={`filter-label ${activeFilter === f.id ? 'active' : ''}`}
+                onClick={() => setActiveFilter(f.id)}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+          <button
+            className={`search-toggle ${searchOpen ? 'active' : ''}`}
+            onClick={() => {
+              setSearchOpen((o) => !o)
+              if (searchOpen) setSearchQuery('')
+            }}
+            aria-label="Søg"
+          >
+            {searchOpen ? <X size={14} /> : <Search size={14} />}
+          </button>
         </div>
         <div className="sort-row">
           {SORTS.map((s) => (
@@ -972,36 +984,28 @@ export default function Home() {
               )}
             </button>
           ))}
-          <button
-            className="search-toggle"
-            onClick={() => {
-              setSearchOpen((o) => !o)
-              if (searchOpen) setSearchQuery('')
-            }}
-            aria-label="Søg"
-          >
-            {searchOpen ? <X size={13} /> : <Search size={13} />}
-          </button>
         </div>
-      </div>
-
-      {/* Område-filter */}
-      <div className="area-filter-row">
-        <span className="area-filter-label">Område</span>
-        {(['alle', 'smu', 'gca', 'privat', 'familie', 'andet'] as const).map((a) => (
-          <button
-            key={a}
-            className={`area-filter-btn ${activeAreaFilter === a ? 'active' : ''}`}
-            style={activeAreaFilter === a && a !== 'alle' ? {
-              borderColor: AREA_COLORS[a],
-              color: AREA_COLORS[a],
-              background: AREA_COLORS[a] + '12',
-            } : {}}
-            onClick={() => setActiveAreaFilter(a)}
-          >
-            {a === 'alle' ? 'Alle' : AREA_LABELS[a]}
-          </button>
-        ))}
+        <div className="area-filter-row">
+          <span className="area-filter-label">Område</span>
+          {(['alle', 'smu', 'gca', 'privat', 'familie', 'andet'] as const).map((a) => {
+            const isActive = activeAreaFilter === a
+            const areaColor = AREA_COLORS[a]
+            return (
+              <button
+                key={a}
+                className={`area-filter-btn ${isActive ? 'active' : ''} ${isActive && a === 'alle' ? 'alle' : ''}`}
+                style={isActive && a !== 'alle' ? {
+                  borderColor: areaColor,
+                  color: areaColor,
+                  background: areaColor + '22',
+                } : {}}
+                onClick={() => setActiveAreaFilter(a)}
+              >
+                {a === 'alle' ? 'Alle' : AREA_LABELS[a]}
+              </button>
+            )
+          })}
+        </div>
       </div>
 
       {searchOpen && (
@@ -1761,12 +1765,22 @@ export default function Home() {
           cursor: not-allowed;
         }
 
-        /* Filter + sort bar */
-        .filter-row {
+        /* Filter-bar — samlet panel for type, sort og område */
+        .filter-bar {
+          background: var(--surface);
+          border: 1px solid var(--border-2);
+          border-radius: var(--radius);
+          padding: 12px;
+          margin-bottom: 16px;
           display: flex;
           flex-direction: column;
+          gap: 10px;
+        }
+
+        .filter-row {
+          display: flex;
+          align-items: center;
           gap: 8px;
-          margin-bottom: 16px;
         }
 
         .filter-labels {
@@ -1777,71 +1791,87 @@ export default function Home() {
           padding-bottom: 2px;
           scrollbar-width: none;
           -webkit-overflow-scrolling: touch;
+          flex: 1;
+          min-width: 0;
         }
 
         .filter-labels::-webkit-scrollbar { display: none; }
 
         .filter-label {
-          background: none;
-          border: 1px solid var(--border);
+          background: var(--bg);
+          border: 1.5px solid var(--border-2);
           border-radius: 20px;
-          color: var(--text-3);
+          color: var(--text-2);
           font-family: inherit;
-          font-size: 11px;
-          letter-spacing: 0.08em;
-          padding: 6px 12px;
+          font-size: 12px;
+          letter-spacing: 0.04em;
+          font-weight: 500;
+          padding: 7px 14px;
           cursor: pointer;
-          transition: all 0.1s;
+          transition: all 0.12s;
           white-space: nowrap;
           flex-shrink: 0;
           touch-action: manipulation;
         }
 
-        .filter-label:hover { border-color: var(--border-2); color: var(--text-2); }
-        .filter-label.active { border-color: var(--accent); color: var(--accent); background: var(--accent-bg); }
+        .filter-label:hover { border-color: var(--text-3); color: var(--text-1); }
+        .filter-label.active {
+          border-color: var(--accent);
+          color: var(--bg);
+          background: var(--accent);
+          font-weight: 700;
+        }
 
         .sort-row {
           display: flex;
-          gap: 10px;
+          gap: 14px;
           align-items: center;
+          padding: 0 2px;
         }
 
         .sort-btn {
           background: none;
           border: none;
-          color: var(--text-3);
+          color: var(--text-2);
           font-family: inherit;
-          font-size: 10px;
+          font-size: 11px;
           letter-spacing: 0.08em;
           padding: 2px 0;
           cursor: pointer;
-          transition: color 0.1s;
+          transition: color 0.12s;
           display: flex;
           align-items: center;
-          gap: 3px;
+          gap: 4px;
+          font-weight: 500;
         }
 
-        .sort-btn:hover { color: var(--text-2); }
-        .sort-btn.active { color: var(--text-2); }
+        .sort-btn:hover { color: var(--text-1); }
+        .sort-btn.active { color: var(--accent); font-weight: 700; }
 
-        .sort-dir { opacity: 0.7; }
+        .sort-dir { opacity: 0.9; font-weight: 700; }
 
         .search-toggle {
-          background: none;
-          border: 1px solid var(--border);
+          background: var(--bg);
+          border: 1.5px solid var(--border-2);
           border-radius: var(--radius-sm);
-          color: var(--text-3);
+          color: var(--text-2);
           display: flex;
           align-items: center;
           justify-content: center;
-          width: 30px;
-          height: 26px;
+          width: 36px;
+          height: 34px;
           cursor: pointer;
-          margin-left: auto;
-          transition: all 0.1s;
+          flex-shrink: 0;
+          transition: all 0.12s;
+          touch-action: manipulation;
         }
 
-        .search-toggle:hover { border-color: var(--border-2); color: var(--text-2); }
+        .search-toggle:hover { border-color: var(--text-3); color: var(--text-1); }
+        .search-toggle.active {
+          border-color: var(--accent);
+          color: var(--accent);
+          background: var(--accent-bg);
+        }
 
         /* Inline search bar */
         .search-bar {
@@ -3154,46 +3184,55 @@ export default function Home() {
         }
         .ai-rerun-btn:hover { color: #4A6A00; }
 
-        /* Område-filter */
+        /* Område-filter — inde i .filter-bar */
         .area-filter-row {
           display: flex;
           align-items: center;
           gap: 6px;
           overflow-x: auto;
           flex-wrap: nowrap;
-          padding-bottom: 2px;
-          margin-bottom: 12px;
+          padding-top: 10px;
+          border-top: 1px solid var(--border);
           scrollbar-width: none;
         }
         .area-filter-row::-webkit-scrollbar { display: none; }
 
         .area-filter-label {
-          font-size: 9px;
-          letter-spacing: 0.2em;
+          font-size: 10px;
+          letter-spacing: 0.18em;
           text-transform: uppercase;
-          color: var(--text-3);
+          color: var(--text-2);
+          font-weight: 600;
           white-space: nowrap;
           flex-shrink: 0;
-          padding-right: 2px;
+          padding-right: 6px;
         }
 
         .area-filter-btn {
-          background: none;
-          border: 1px solid #222;
+          background: var(--bg);
+          border: 1.5px solid var(--border-2);
           border-radius: 20px;
-          color: #3A3A3A;
+          color: var(--text-2);
           font-family: inherit;
-          font-size: 10px;
-          letter-spacing: 0.06em;
-          padding: 4px 10px;
+          font-size: 12px;
+          letter-spacing: 0.03em;
+          font-weight: 500;
+          padding: 6px 12px;
           cursor: pointer;
-          transition: all 0.1s;
+          transition: all 0.12s;
           white-space: nowrap;
           flex-shrink: 0;
           touch-action: manipulation;
         }
-        .area-filter-btn:hover { border-color: #333; color: #555; }
-        .area-filter-btn.active { border-color: var(--border-2); color: var(--text-2); }
+        .area-filter-btn:hover { border-color: var(--text-3); color: var(--text-1); }
+        .area-filter-btn.active {
+          font-weight: 700;
+        }
+        .area-filter-btn.active.alle {
+          border-color: var(--accent);
+          color: var(--bg);
+          background: var(--accent);
+        }
 
         /* Area badge på items */
         .area-badge {
@@ -3261,7 +3300,9 @@ export default function Home() {
           .capture-footer { justify-content: stretch; }
           .capture-hint { display: none; }
 
+          .filter-bar { padding: 10px; gap: 8px; }
           .sort-row { display: none; }
+          .area-filter-row { padding-top: 8px; }
 
           .item-card { padding: 14px; }
 

@@ -75,8 +75,8 @@ export async function POST(req: NextRequest) {
   const now = new Date()
   let items: RawItem[] = (allItems ?? []) as RawItem[]
 
-  // Filtrer snoozede fra
-  items = items.filter((i) => !i.snoozed_until || new Date(i.snoozed_until) < now)
+  // Filtrer snoozede + someday fra — someday hører ikke hjemme i aktive briefings
+  items = items.filter((i) => (!i.snoozed_until || new Date(i.snoozed_until) < now) && i.ai_type !== 'someday')
 
   if (type === 'focus') {
     items = items.filter((i) => {

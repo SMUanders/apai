@@ -87,10 +87,19 @@ const FILTERS = [
   { id: 'task', label: 'Opgaver' },
   { id: 'reminder', label: 'Påmindelser' },
   { id: 'idea', label: 'Idéer' },
+  { id: 'someday', label: 'Engang' },
   { id: 'med-dato', label: 'Med dato' },
   { id: 'hoj-prioritet', label: 'Høj prioritet' },
   { id: 'review', label: '⚑ Review' },
   { id: 'sager', label: '⊙ Sager' },
+]
+
+// Manuelle typer — ved at klikke på type-badgen kan brugeren overstyre AI
+const MANUAL_TYPES: { id: 'task' | 'note' | 'idea' | 'someday'; label: string }[] = [
+  { id: 'task', label: 'Opgave' },
+  { id: 'note', label: 'Note' },
+  { id: 'idea', label: 'Idé' },
+  { id: 'someday', label: 'Engang' },
 ]
 
 const SORTS = [
@@ -547,6 +556,19 @@ export default function Home() {
     }
   }
 
+  async function handleTypeUpdate(id: string, ai_type: 'task' | 'note' | 'idea' | 'someday') {
+    const res = await fetch(`/api/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ai_type }),
+    })
+    const data = await res.json()
+    if (data.ai_type) {
+      setItems((prev) => prev.map((i) => (i.id === id ? { ...i, ai_type: data.ai_type } : i)))
+      setBacklogItems((prev) => prev.map((i) => (i.id === id ? { ...i, ai_type: data.ai_type } : i)))
+    }
+  }
+
   async function moveToInbox(id: string) {
     setBacklogItems((prev) => prev.filter((i) => i.id !== id))
     const res = await fetch(`/api/items/${id}`, {
@@ -732,10 +754,12 @@ export default function Home() {
     if (activeFilter === 'task') result = result.filter((i) => i.ai_type === 'task')
     else if (activeFilter === 'reminder') result = result.filter((i) => i.ai_type === 'reminder')
     else if (activeFilter === 'idea') result = result.filter((i) => i.ai_type === 'idea')
-    else if (activeFilter === 'med-dato') result = result.filter((i) => i.due_at)
-    else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4)
+    else if (activeFilter === 'someday') result = result.filter((i) => i.ai_type === 'someday')
+    else if (activeFilter === 'med-dato') result = result.filter((i) => i.due_at && i.ai_type !== 'someday')
+    else if (activeFilter === 'hoj-prioritet') result = result.filter((i) => i.ai_priority >= 4 && i.ai_type !== 'someday')
     else if (activeFilter === 'review') result = result.filter((i) => i.ai_type === 'none' || i.ai_context === '__review__')
     else if (activeFilter === 'sager') result = result.filter((i) => !!i.group_label)
+    else result = result.filter((i) => i.ai_type !== 'someday') // 'alle' — skjul someday fra hovedvisning
 
     if (activeAreaFilter !== 'alle') {
       result = result.filter((i) => (i.area ?? 'andet') === activeAreaFilter)
@@ -782,7 +806,7 @@ export default function Home() {
   const isFiltered =
     activeFilter !== 'alle' || activeAreaFilter !== 'alle' || searchQuery.trim() !== '' || activeSort !== 'prioritet'
 
-  const top3 = filteredItems.filter((i) => i.ai_priority >= 4).slice(0, 3)
+  const top3 = filteredItems.filter((i) => i.ai_priority >= 4 && i.ai_type !== 'someday').slice(0, 3)
   const rest = filteredItems.filter((i) => !top3.find((t) => t.id === i.id))
 
   return (
@@ -1083,6 +1107,7 @@ export default function Home() {
                 existingGroups={existingGroups}
                 onGroupUpdate={handleGroupUpdate}
                 onAreaUpdate={handleAreaUpdate}
+                onTypeUpdate={handleTypeUpdate}
                 onPriorityChange={handlePriorityChange}
                 onSnooze={handleSnooze}
               />
@@ -1128,6 +1153,7 @@ export default function Home() {
                       existingGroups={existingGroups}
                       onGroupUpdate={handleGroupUpdate}
                       onAreaUpdate={handleAreaUpdate}
+                      onTypeUpdate={handleTypeUpdate}
                       onPriorityChange={handlePriorityChange}
                       onSnooze={handleSnooze}
                     />
@@ -1148,6 +1174,7 @@ export default function Home() {
                   existingGroups={existingGroups}
                   onGroupUpdate={handleGroupUpdate}
                   onAreaUpdate={handleAreaUpdate}
+                  onTypeUpdate={handleTypeUpdate}
                   onPriorityChange={handlePriorityChange}
                   onSnooze={handleSnooze}
                 />
@@ -1193,6 +1220,7 @@ export default function Home() {
                           existingGroups={existingGroups}
                           onGroupUpdate={handleGroupUpdate}
                           onAreaUpdate={handleAreaUpdate}
+                          onTypeUpdate={handleTypeUpdate}
                           onPriorityChange={handlePriorityChange}
                           onSnooze={handleSnooze}
                         />
@@ -1228,6 +1256,7 @@ export default function Home() {
                   existingGroups={existingGroups}
                   onGroupUpdate={handleGroupUpdate}
                   onAreaUpdate={handleAreaUpdate}
+                  onTypeUpdate={handleTypeUpdate}
                   onPriorityChange={handlePriorityChange}
                   onSnooze={handleSnooze}
                   isBacklog
@@ -3078,6 +3107,7 @@ function ItemCard({
   onUpdate,
   onGroupUpdate,
   onAreaUpdate,
+  onTypeUpdate,
   onPriorityChange,
   onSnooze,
   existingGroups = [],
@@ -3090,6 +3120,7 @@ function ItemCard({
   onUpdate?: (id: string, updated: Item) => void
   onGroupUpdate?: (id: string, group_label: string | null) => void
   onAreaUpdate?: (id: string, area: string) => void
+  onTypeUpdate?: (id: string, ai_type: 'task' | 'note' | 'idea' | 'someday') => void
   onPriorityChange?: (id: string, newPriority: number) => void
   onSnooze?: (id: string, option: string) => void
   existingGroups?: string[]
@@ -3110,6 +3141,7 @@ function ItemCard({
   const [groupPickerOpen, setGroupPickerOpen] = useState(false)
   const [newGroupInput, setNewGroupInput] = useState('')
   const [areaPickerOpen, setAreaPickerOpen] = useState(false)
+  const [typePickerOpen, setTypePickerOpen] = useState(false)
   const [snoozeOpen, setSnoozeOpen] = useState(false)
 
   function onTouchStart(e: React.TouchEvent) {
@@ -3192,7 +3224,12 @@ function ItemCard({
       <div>
         <div className="item-summary">{item.ai_summary || item.raw_input}</div>
         <div className="item-meta">
-          <span className="item-type" style={{ background: color + '20', color }}>
+          <span
+            className="item-type"
+            style={{ background: color + '20', color, cursor: onTypeUpdate ? 'pointer' : 'default' }}
+            onClick={(e) => { if (onTypeUpdate) { e.stopPropagation(); setTypePickerOpen((o) => !o) } }}
+            title={onTypeUpdate ? 'Skift type' : undefined}
+          >
             {TYPE_LABELS[item.ai_type] || 'Ukendt'}
           </span>
           {item.group_label && (
@@ -3361,8 +3398,31 @@ function ItemCard({
         </div>
       )}
 
+      {/* Type-picker */}
+      {typePickerOpen && onTypeUpdate && (
+        <div className="area-picker">
+          {MANUAL_TYPES.map((t) => (
+            <button
+              key={t.id}
+              className={`area-picker-btn ${item.ai_type === t.id ? 'active' : ''}`}
+              style={item.ai_type === t.id ? { borderColor: TYPE_COLORS[t.id], color: TYPE_COLORS[t.id] } : {}}
+              onClick={() => { onTypeUpdate(item.id, t.id); setTypePickerOpen(false) }}
+            >
+              {t.label}
+            </button>
+          ))}
+          <button
+            className="area-picker-btn"
+            style={{ color: '#3A3A3A' }}
+            onClick={() => setTypePickerOpen(false)}
+          >
+            Luk
+          </button>
+        </div>
+      )}
+
       {/* Handlinger */}
-      {!isTemp && !updateOpen && !groupPickerOpen && !snoozeOpen && (
+      {!isTemp && !updateOpen && !groupPickerOpen && !snoozeOpen && !typePickerOpen && !areaPickerOpen && (
         <div className="item-actions">
           {onPriorityChange && (
             <>

@@ -167,6 +167,8 @@ export default function Home() {
   const [aiAnalysisMsg, setAiAnalysisMsg] = useState<string | null>(null)
   // Speech
   const [speaking, setSpeaking] = useState(false)
+  // Overblik — status counts
+  const [snoozedCount, setSnoozedCount] = useState(0)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const cmdInputRef = useRef<HTMLInputElement>(null)
@@ -181,6 +183,7 @@ export default function Home() {
     fetchBacklog()
     fetchHistory()
     fetchDuplicates()
+    fetchStats()
     if (window.innerWidth > 768) {
       textareaRef.current?.focus()
     }
@@ -196,6 +199,15 @@ export default function Home() {
     const data = await res.json()
     setItems(Array.isArray(data) ? data : [])
     setLoading(false)
+  }
+
+  async function fetchStats() {
+    try {
+      const res = await fetch('/api/items/stats')
+      if (!res.ok) return
+      const data = await res.json()
+      setSnoozedCount(data.snoozedCount ?? 0)
+    } catch { /* stilhedens tilstand */ }
   }
 
   async function fetchDuplicates() {
@@ -319,6 +331,7 @@ export default function Home() {
       setItems((prev) => prev.filter((i) => i.id !== id))
       setBacklogItems((prev) => prev.filter((i) => i.id !== id))
       setBriefPoints((prev) => prev.filter((p) => p.item_id !== id))
+      fetchStats()
     }
   }
 
@@ -853,6 +866,21 @@ export default function Home() {
     .slice(0, 3)
   const rest = filteredItems.filter((i) => !top3.find((t) => t.id === i.id))
 
+  // Overblik nu — top sager baseret på hele inboxen, uanset filtre
+  const topSager = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const it of items) {
+      if (!it.group_label) continue
+      counts.set(it.group_label, (counts.get(it.group_label) ?? 0) + 1)
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 2)
+      .map(([label, count]) => ({ label, count }))
+  }, [items])
+
+  const overviewHasContent = top3.length > 0 || snoozedCount > 0 || topSager.length > 0
+
   return (
     <main className="apai-root">
       <header className="apai-header">
@@ -945,6 +973,73 @@ export default function Home() {
           </div>
         )
       })()}
+
+      {/* Overblik nu — kort statusboard */}
+      {overviewHasContent && (
+        <section className="overview-panel" aria-label="Overblik nu">
+          <div className="overview-head">
+            <span className="overview-title">Overblik nu</span>
+          </div>
+
+          {top3.length > 0 && (
+            <div className="overview-block">
+              <div className="overview-label">Vigtigst</div>
+              <ul className="overview-list">
+                {top3.map((i) => (
+                  <li key={i.id} className="overview-item">
+                    <span
+                      className="overview-dot"
+                      style={{ background: AREA_COLORS[i.area ?? 'andet'] ?? '#555' }}
+                      title={AREA_LABELS[i.area ?? 'andet']}
+                    />
+                    <span className="overview-item-title">{i.ai_summary || i.raw_input}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(snoozedCount > 0 || backlogItems.length > 0) && (
+            <div className="overview-status">
+              <span className="overview-status-lead">Systemet har styr på</span>
+              {snoozedCount > 0 && (
+                <span
+                  className="overview-chip"
+                  title="Items der kommer tilbage automatisk"
+                >
+                  {snoozedCount} kommer tilbage senere
+                </span>
+              )}
+              {backlogItems.length > 0 && (
+                <button
+                  className="overview-chip as-btn"
+                  onClick={() => setBacklogOpen((o) => !o)}
+                  title="Items lagt til siden — ses ikke i indbakken"
+                >
+                  {backlogItems.length} i baggrund
+                </button>
+              )}
+            </div>
+          )}
+
+          {topSager.length > 0 && (
+            <div className="overview-block">
+              <div className="overview-label">Aktive sager</div>
+              <div className="overview-sager">
+                {topSager.map((s) => (
+                  <button
+                    key={s.label}
+                    className="overview-sag"
+                    onClick={() => setActiveFilter('sager')}
+                  >
+                    {s.label} <span className="overview-sag-count">{s.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Filter + Sort + Search */}
       <div className="filter-bar">
@@ -1763,6 +1858,144 @@ export default function Home() {
         .capture-btn:disabled {
           opacity: 0.25;
           cursor: not-allowed;
+        }
+
+        /* Overblik nu — status-panel øverst */
+        .overview-panel {
+          background: var(--surface);
+          border: 1px solid var(--border-2);
+          border-radius: var(--radius);
+          padding: 14px 16px;
+          margin-bottom: 14px;
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .overview-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .overview-title {
+          font-size: 10px;
+          letter-spacing: 0.28em;
+          text-transform: uppercase;
+          color: var(--accent);
+          font-weight: 700;
+        }
+
+        .overview-block {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .overview-label {
+          font-size: 10px;
+          letter-spacing: 0.18em;
+          text-transform: uppercase;
+          color: var(--text-3);
+          font-weight: 600;
+        }
+
+        .overview-list {
+          list-style: none;
+          margin: 0;
+          padding: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .overview-item {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          font-size: 14px;
+          color: var(--text-1);
+          line-height: 1.35;
+        }
+
+        .overview-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          flex-shrink: 0;
+        }
+
+        .overview-item-title {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+          min-width: 0;
+        }
+
+        .overview-status {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+          font-size: 12px;
+          color: var(--text-2);
+        }
+
+        .overview-chip {
+          background: var(--bg);
+          border: 1px solid var(--border-2);
+          border-radius: 14px;
+          color: var(--text-1);
+          font-family: inherit;
+          font-size: 12px;
+          font-weight: 600;
+          padding: 4px 10px;
+          touch-action: manipulation;
+          display: inline-block;
+        }
+
+        .overview-chip.as-btn {
+          cursor: pointer;
+          transition: all 0.12s;
+        }
+
+        .overview-chip.as-btn:hover { border-color: var(--text-3); }
+
+        .overview-status-lead {
+          color: var(--text-3);
+        }
+
+        .overview-sager {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+        }
+
+        .overview-sag {
+          background: var(--bg);
+          border: 1px solid rgba(232,255,60,0.25);
+          border-radius: var(--radius-sm);
+          color: var(--text-1);
+          font-family: inherit;
+          font-size: 13px;
+          padding: 6px 10px;
+          cursor: pointer;
+          transition: all 0.12s;
+          touch-action: manipulation;
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+        }
+
+        .overview-sag:hover {
+          border-color: var(--accent);
+          background: var(--accent-bg);
+        }
+
+        .overview-sag-count {
+          font-size: 11px;
+          color: var(--accent);
+          font-weight: 700;
         }
 
         /* Filter-bar — samlet panel for type, sort og område */
